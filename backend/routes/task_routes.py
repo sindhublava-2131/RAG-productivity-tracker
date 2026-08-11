@@ -54,6 +54,8 @@ def _persist_memory(
 def get_tasks(
     status_filter: str | None = Query(default=None),
     priority_filter: str | None = Query(default=None),
+    limit: int = Query(default=200, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(auth.get_current_user),
 ):
@@ -63,7 +65,12 @@ def get_tasks(
     if priority_filter:
         query = query.filter(models.Task.priority == priority_filter.upper())
 
-    tasks = query.order_by(models.Task.created_at.desc()).all()
+    tasks = (
+        query.order_by(models.Task.created_at.desc())
+        .limit(limit)
+        .offset(offset)
+        .all()
+    )
     return tasks
 
 
