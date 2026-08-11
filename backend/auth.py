@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import uuid
 from datetime import UTC, datetime, timedelta
 
 import bcrypt
@@ -12,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from core.config import settings
 from database import get_db
-from models import User
+from models import TokenBlacklist, User
 
 logger = logging.getLogger("cozy.auth")
 
@@ -39,7 +40,7 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None) -> s
         expires_delta
         or timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     )
-    to_encode.update({"exp": expire})
+    to_encode.update({"exp": expire, "jti": uuid.uuid4().hex})
     secret = settings.resolved_jwt_secret()
     return jwt.encode(to_encode, secret, algorithm=settings.JWT_ALGORITHM)
 
@@ -51,6 +52,47 @@ def decode_token(token: str) -> dict:
     except InvalidTokenError as exc:
         logger.debug("JWT decode failed: %s", exc)
         raise exc
+
+
+def is_token_revoked(db: Session, jti: str) -> bool:
+    """Return True if the given token id has been blacklisted."""
+    return (
+        db.query(TokenBlacklist).filter(TokenBlacklist.jti == jti).first() is not None
+    )
+
+
+def revoke_token(db: Session, token: str) -> bool:
+    """Blacklist a token by its jti so it can no longer authenticate.
+
+    Returns True when the token was actually revoked, False when it was
+    already invalid/expired (nothing to revoke).
+    """
+    try:
+        payload = decode_token(token)
+    except InvalidTokenError:
+        return False
+    jti = payload.get("jti")
+    if not jti:
+        return False
+
+    exp = payload.get("exp")
+    try:
+        expires_at = datetime.fromtimestamp(exp, tz=UTC) if exp else datetime.now(UTC)
+    except (TypeError, ValueError, OSError):
+        expires_at = datetime.now(UTC)
+
+    if is_token_revoked(db, jti):
+        return True
+
+    db.add(
+        TokenBlacklist(
+            jti=jti,
+            user_id=int(payload.get("sub", 0)) if str(payload.get("sub", "")).isdigit() else 0,
+            expires_at=expires_at,
+        )
+    )
+    db.commit()
+    return True
 
 
 def get_current_user(
@@ -65,7 +107,10 @@ def get_current_user(
     try:
         payload = decode_token(token)
         email: str | None = payload.get("sub")
+        jti: str | None = payload.get("jti")
         if email is None:
+            raise credentials_exception
+        if jti and is_token_revoked(db, jti):
             raise credentials_exception
     except InvalidTokenError:
         raise credentials_exception from None
