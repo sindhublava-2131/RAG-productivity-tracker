@@ -53,8 +53,8 @@ export const App: React.FC = () => {
     }
   };
 
-  const handleLogout = () => {
-    AuthService.logout();
+  const handleLogout = async () => {
+    await AuthService.logout();
     setUser(null);
     setTasks([]);
     setAnalytics(null);
@@ -67,8 +67,8 @@ export const App: React.FC = () => {
         {/* Cute Pastel Header */}
         <CuteHeader
           user={user}
-          streakDays={analytics?.current_streak_days || 4}
-          completedToday={analytics?.daily_completion || 1}
+          streakDays={analytics?.current_streak_days ?? 0}
+          completedToday={analytics?.daily_completion ?? 0}
           activeTab={activeTab}
           setActiveTab={setActiveTab}
           onOpenAuth={() => setIsAuthOpen(true)}
@@ -82,7 +82,7 @@ export const App: React.FC = () => {
           )}
 
           {activeTab === 'analytics' && (
-            <AnalyticsDashboard />
+            <AnalyticsDashboard analytics={analytics} onRefresh={reloadData} />
           )}
 
           {activeTab === 'assistant' && (

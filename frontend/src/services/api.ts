@@ -114,8 +114,27 @@ export const AuthService = {
     }
   },
 
-  logout(): void {
-    localStorage.removeItem(TOKEN_KEY);
+  async logout(): Promise<void> {
+    // Best-effort server-side revocation; always clear the local session.
+    try {
+      await api.post('/auth/logout');
+    } catch {
+      // Token may already be invalid — local cleanup still applies.
+    } finally {
+      localStorage.removeItem(TOKEN_KEY);
+    }
+  },
+
+  async changePassword(currentPassword: string, newPassword: string): Promise<User> {
+    try {
+      const res = await api.post('/auth/change-password', {
+        current_password: currentPassword,
+        new_password: newPassword,
+      });
+      return res.data;
+    } catch (e) {
+      throw toApiError(e);
+    }
   },
 };
 
