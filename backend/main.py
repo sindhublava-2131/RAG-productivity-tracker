@@ -5,6 +5,7 @@ import time
 import uuid
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,9 +22,37 @@ from services.rag.service import get_rag_service
 configure_logging()
 logger = logging.getLogger("cozy.main")
 
+BACKEND_DIR = Path(__file__).parent.resolve()
+
 
 def _utcnow() -> datetime:
     return datetime.now(UTC)
+
+
+def _run_migrations(fail_fast: bool = False) -> None:
+    """Apply Alembic migrations to the configured database.
+
+    When ``fail_fast`` is False (development), a legacy database created with
+    ``create_all`` (no ``alembic_version`` table) falls back to metadata
+    creation so existing dev data is never lost.
+    """
+    try:
+        from alembic import command
+        from alembic.config import Config
+
+        cfg = Config(str(BACKEND_DIR / "alembic.ini"))
+        cfg.set_main_option("script_location", str(BACKEND_DIR / "alembic"))
+        command.upgrade(cfg, "head")
+        logger.info("Database schema is up to date (Alembic).")
+    except Exception as exc:
+        if fail_fast:
+            logger.error("Alembic migration failed in production: %s", exc)
+            raise
+        logger.warning(
+            "Alembic migration failed (%s); falling back to metadata create_all for dev.",
+            exc,
+        )
+        Base.metadata.create_all(bind=engine)
 
 
 def _seed_demo_data() -> None:
@@ -158,14 +187,16 @@ def _seed_demo_data() -> None:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    if settings.is_production:
-        # Production schema is managed by Alembic migrations; do not auto-create.
+    if settings.is_testing:
+        # Test fixtures own their in-memory schema.
+        logger.info("Testing mode: schema managed by test fixtures.")
+    elif settings.is_production:
+        _run_migrations(fail_fast=True)
         logger.info("Production mode: schema management via Alembic.")
     else:
-        Base.metadata.create_all(bind=engine)
-        logger.info("Non-production mode: created schema via metadata (dev convenience).")
+        _run_migrations(fail_fast=False)
 
-    if settings.SEED_DEMO and not settings.is_production:
+    if settings.SEED_DEMO and not settings.is_production and not settings.is_testing:
         _seed_demo_data()
 
     yield
