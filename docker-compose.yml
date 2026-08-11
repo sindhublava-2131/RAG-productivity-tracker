@@ -28,8 +28,9 @@ services:
     environment:
       - APP_ENV=production
       - DATABASE_URL=postgresql://cozy:cozy_pass@db:5432/cozy_db
-      - JWT_SECRET_KEY=cozy_rag_productivity_tracker_super_secret_key_2026
-      - SEED_DEMO=true
+      # JWT_SECRET_KEY must be provided via .env or the shell; compose fails fast if unset.
+      # Generate one with: python -c "import secrets; print(secrets.token_urlsafe(48))"
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY must be set in .env or environment}
       - RAG_PROVIDER=ollama
       - OLLAMA_HOST=http://host.docker.internal:11434
     volumes:
