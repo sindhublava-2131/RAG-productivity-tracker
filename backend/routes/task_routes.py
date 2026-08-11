@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -30,24 +31,40 @@ def _persist_memory(
     content: str,
     task: models.Task | None = None,
 ) -> None:
-    """Persist a RAG memory; surface failures explicitly without failing the task op."""
-    try:
-        rag = get_rag_service()
-        rag.store_memory_from_task(
-            user_id=user_id,
-            task_id=task_id,
-            action=action,
-            content=content,
-            task_title=task.title if task else None,
-            priority=task.priority if task else None,
-            status=task.status if task else None,
-            due_date=task.due_date if task else None,
-            completed_at=task.completed_at if task else None,
-            estimated_minutes=task.estimated_minutes if task else None,
-            actual_minutes=task.actual_minutes if task else None,
-        )
-    except MemoryIngestionError as exc:
-        logger.error("Memory persistence failed for task %s: %s", task_id, exc)
+    """Persist a RAG memory with one retry; surface failures explicitly.
+
+    The task operation still succeeds on failure, but the error is logged at
+    ERROR level with full context so divergence between the DB and the vector
+    store is never silent.
+    """
+    rag = get_rag_service()
+    attempts = 2
+    for attempt in range(1, attempts + 1):
+        try:
+            rag.store_memory_from_task(
+                user_id=user_id,
+                task_id=task_id,
+                action=action,
+                content=content,
+                task_title=task.title if task else None,
+                priority=task.priority if task else None,
+                status=task.status if task else None,
+                due_date=task.due_date if task else None,
+                completed_at=task.completed_at if task else None,
+                estimated_minutes=task.estimated_minutes if task else None,
+                actual_minutes=task.actual_minutes if task else None,
+            )
+            return
+        except MemoryIngestionError as exc:
+            logger.error(
+                "Memory persistence attempt %s/%s failed for task %s: %s",
+                attempt,
+                attempts,
+                task_id,
+                exc,
+            )
+            if attempt < attempts:
+                time.sleep(0.3)
 
 
 @router.get("", response_model=list[schemas.TaskResponse])
