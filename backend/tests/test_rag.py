@@ -1,18 +1,15 @@
 from __future__ import annotations
 
-import asyncio
 from datetime import UTC, datetime
 
 import pytest
 
 from services.rag.context import ContextBuilder, SourceBlock
-from services.rag.embeddings import FakeEmbeddingService
 from services.rag.grounding import GroundingValidator
-from services.rag.pipeline import RagPipeline, _GROUNDED_SYSTEM_PROMPT
+from services.rag.pipeline import _GROUNDED_SYSTEM_PROMPT, RagPipeline
 from services.rag.providers.base import FailingLLMProvider, FakeLLMProvider
 from services.rag.reranking import Reranker
 from services.rag.retrieval import HybridRetriever
-from services.rag.service import RagService
 from services.rag.vector_store import InMemoryVectorStore, VectorRecord
 from tests.fixtures.rag.evaluation_dataset import EVALUATION_DATASET
 

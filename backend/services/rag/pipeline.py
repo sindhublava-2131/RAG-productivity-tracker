@@ -195,7 +195,7 @@ class RagPipeline:
             error_type or "none",
         )
 
-        result = {
+        final_result = {
             "answer": answer,
             "sources": sources,
             "confidence": confidence,
@@ -205,8 +205,8 @@ class RagPipeline:
             "model": llm_model or provider_name,
             "execution_time_ms": elapsed_ms,
         }
-        self._cache_put(cache_key, result)
-        return result
+        self._cache_put(cache_key, final_result)
+        return final_result
 
     def _resolve_provider(self, provider_name: str, model_name: str | None) -> LLMProvider:
         if self._llm_provider is not None:

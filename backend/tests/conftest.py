@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 from collections.abc import Generator
-from datetime import UTC, datetime, timedelta
 
 # Ensure the app runs in testing mode (lifespan skips migrations/seeding).
 os.environ.setdefault("APP_ENV", "test")

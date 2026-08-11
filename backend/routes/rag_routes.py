@@ -3,14 +3,12 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy.orm import Session
 
 import auth
 import models
 import schemas
 from core.config import settings
 from core.rate_limit import rate_limit
-from database import get_db
 from services.rag.service import get_rag_service
 
 router = APIRouter(prefix="/api/rag", tags=["RAG AI Memory & Assistant"])

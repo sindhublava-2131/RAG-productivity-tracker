@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import timedelta
 
 import pytest
+from pydantic import ValidationError
 
 import auth
 from core.config import Settings
@@ -79,9 +80,6 @@ def test_invalid_citation_rejected():
     result = validator.validate("Answering using fake [Source: hallucinated_99]", sources)
     assert result.grounded is False
     assert "hallucinated_99" in result.invalid_source_ids
-
-
-from pydantic import ValidationError
 
 
 def test_production_requires_jwt_secret():
