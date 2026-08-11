@@ -14,6 +14,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+# Run as a non-root user (least privilege)
+RUN useradd --create-home --shell /usr/sbin/nologin appuser \
+    && mkdir -p /app/chroma_db \
+    && chown -R appuser:appuser /app
+USER appuser
+
 EXPOSE 8000
 
 HEALTHCHECK --interval=10s --timeout=5s --start-period=10s --retries=3 \
