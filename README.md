@@ -124,14 +124,22 @@ Copy `.env.example` to `.env` in the project root:
 | Variable | Default Value | Description |
 |---|---|---|
 | `APP_ENV` | `development` | Environment mode (`development`, `test`, `production`) |
-| `DATABASE_URL` | `postgresql://cozy:cozy_pass@db:5432/cozy_db` | SQLAlchemy connection string |
-| `JWT_SECRET_KEY` | *(Required in Production)* | Secret key for signing JWT tokens |
+| `LOG_FORMAT` | `text` | Log format (`text` or `json`) |
+| `DATABASE_URL` | `sqlite:///./cozy_productivity.db` | SQLAlchemy connection string |
+| `JWT_SECRET_KEY` | *(Required in Production)* | Secret key for signing JWT tokens. Generate with `python -c "import secrets; print(secrets.token_urlsafe(48))"` |
 | `SEED_DEMO` | `false` | Enable seed demo user/tasks on startup (non-prod only) |
+| `CORS_ORIGINS` | `["http://localhost:3000", ...]` | Allowed frontend origins (JSON array) |
 | `RAG_PROVIDER` | `ollama` | Default LLM provider (`ollama`, `openai`, `gemini`, `grok`) |
 | `OLLAMA_HOST` | `http://localhost:11434` | Ollama service endpoint |
 | `OPENAI_API_KEY` | *(Optional)* | OpenAI API key |
 | `GEMINI_API_KEY` | *(Optional)* | Google Gemini API key |
 | `GROK_API_KEY` | *(Optional)* | xAI Grok API key |
+| `RATE_LIMIT_ENABLED` | `true` | Enables in-process rate limiting on auth/RAG endpoints |
+| `RATE_LIMIT_AUTH_PER_MINUTE` | `20` | Max login/register attempts per IP per minute |
+| `RATE_LIMIT_RAG_PER_MINUTE` | `30` | Max RAG queries per IP per minute |
+| `RAG_CACHE_ENABLED` | `true` | Cache identical RAG questions per user (TTL-bounded) |
+
+> **Security:** `docker-compose.yml` requires `JWT_SECRET_KEY` to be set (it fails fast if missing). The demo seed is disabled in production. Auth endpoints are rate-limited, JWTs are revoked server-side on logout, and a per-provider model allowlist prevents LLM cost abuse.
 
 ---
 
@@ -200,6 +208,20 @@ The GitHub Actions workflow (`.github/workflows/ci.yml`) executes on pushes and 
 3. **Docker Smoke Test**: Multi-container Docker Compose build, service healthcheck polling, and API functionality verification.
 
 ---
+
+### Auth & Account
+
+- `POST /api/auth/logout` — revokes the current token server-side (blacklist), so it cannot be reused.
+- `POST /api/auth/change-password` — change password after verifying the current one.
+
+### Rate Limiting
+
+Rate limits are enforced in-process (per client IP) using a sliding window:
+
+- `POST /api/auth/login` and `POST /api/auth/register`: `RATE_LIMIT_AUTH_PER_MINUTE` (default 20/min)
+- `POST /api/rag/query`: `RATE_LIMIT_RAG_PER_MINUTE` (default 30/min)
+
+Rate limiting is disabled automatically when `APP_ENV=test`.
 
 ## 🔧 Troubleshooting
 
