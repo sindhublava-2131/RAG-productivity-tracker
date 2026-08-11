@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 import auth
 import models
 import schemas
+from core.config import settings
+from core.rate_limit import rate_limit
 from database import get_db
 from services.rag.service import get_rag_service
 
@@ -25,13 +27,28 @@ def _parse_iso(value: str | None) -> datetime | None:
         return None
 
 
+def _validate_model_allowlist(provider: str | None, model_name: str | None) -> None:
+    """Reject model names outside the per-provider allowlist (LLM cost abuse guard)."""
+    name = (provider or settings.RAG_PROVIDER or "ollama").lower()
+    allowed = settings.ALLOWED_MODELS.get(name, [])
+    if allowed and model_name and model_name not in allowed:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Model '{model_name}' is not allowed for provider '{name}'. "
+            f"Allowed: {', '.join(allowed)}",
+        )
+
+
 @router.post("/query", response_model=schemas.RAGQueryResponse)
 async def query_rag_assistant(
     req: schemas.RAGQueryRequest,
     current_user: models.User = Depends(auth.get_current_user),
+    _: None = Depends(rate_limit("rag-query", limit=30)),
 ):
     if not req.question or not req.question.strip():
         raise HTTPException(status_code=400, detail="Question cannot be empty.")
+
+    _validate_model_allowlist(req.provider, req.model_name)
 
     rag = get_rag_service()
     result = await rag.query(
@@ -50,7 +67,6 @@ def get_user_rag_memories(
     offset: int = Query(default=0, ge=0),
     task_id: int | None = Query(default=None),
     action: str | None = Query(default=None),
-    db: Session = Depends(get_db),  # noqa: F841 - keeps dependency parity
     current_user: models.User = Depends(auth.get_current_user),
 ):
     rag = get_rag_service()
@@ -96,7 +112,6 @@ def get_user_rag_memories(
 @router.delete("/memories/{memory_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_memory(
     memory_id: str,
-    db: Session = Depends(get_db),  # noqa: F841
     current_user: models.User = Depends(auth.get_current_user),
 ):
     rag = get_rag_service()
