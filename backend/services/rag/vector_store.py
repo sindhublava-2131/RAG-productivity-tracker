@@ -39,6 +39,11 @@ class VectorStore:
     ChromaDB adapter lives in :class:`ChromaVectorStore`.
     """
 
+    @property
+    def mode(self) -> str:
+        """Backend identifier: e.g. 'chroma', 'in-memory', 'in-memory-fallback'."""
+        return "unknown"
+
     def add(self, user_id: int, record: VectorRecord) -> str:  # pragma: no cover - interface
         raise NotImplementedError
 
@@ -86,10 +91,16 @@ class ChromaVectorStore(VectorStore):
             self._client = chromadb.PersistentClient(path=self._path)
         except Exception as exc:
             logger.warning(
-                "ChromaDB initialization failed (%s). Falling back to InMemoryVectorStore.", exc
+                "ChromaDB initialization failed (%s). Falling back to InMemoryVectorStore. "
+                "Memories will be volatile and LOST on restart — surface this via /health/ready.",
+                exc,
             )
             self._client = None
             self._fallback = InMemoryVectorStore()
+
+    @property
+    def mode(self) -> str:
+        return "in-memory-fallback" if self._fallback is not None else "chroma"
 
     def _collection(self, user_id: int):
         if self._client is None:
@@ -221,6 +232,10 @@ class ChromaVectorStore(VectorStore):
 
 class InMemoryVectorStore(VectorStore):
     """Deterministic in-memory fake, injected explicitly into tests."""
+
+    @property
+    def mode(self) -> str:
+        return "in-memory"
 
     def __init__(self) -> None:
         self._records: dict[int, dict[str, VectorRecord]] = {}
