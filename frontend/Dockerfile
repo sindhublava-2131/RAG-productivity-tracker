@@ -12,6 +12,7 @@ FROM nginx:alpine
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
+# nginx:alpine already runs as the non-root 'nginx' user by default (no USER root switch).
 EXPOSE 80
 
 HEALTHCHECK --interval=10s --timeout=5s --start-period=5s --retries=3 \
