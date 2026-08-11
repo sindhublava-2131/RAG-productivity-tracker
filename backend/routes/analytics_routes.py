@@ -97,11 +97,11 @@ def get_analytics(
         .with_entities(models.Task.completed_at)
         .all()
     )
-    completed_dts = [
-        dt
-        for (dt,) in completed_at_rows
-        if (dt := _aware(dt)) is not None
-    ]
+    completed_dts: list[datetime] = []
+    for (dt,) in completed_at_rows:
+        aware = _aware(dt)
+        if aware is not None:
+            completed_dts.append(aware)
 
     weekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
     completion_by_weekday: dict[str, int] = {day: 0 for day in weekdays}
