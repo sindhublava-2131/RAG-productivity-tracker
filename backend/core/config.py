@@ -68,6 +68,31 @@ class Settings(BaseSettings):
     GROK_API_KEY: str = ""
     GROK_MODEL: str = "grok-beta"
 
+    # --- Rate limiting (in-process sliding window) ---
+    RATE_LIMIT_ENABLED: bool = True
+    RATE_LIMIT_AUTH_PER_MINUTE: int = 20
+    RATE_LIMIT_RAG_PER_MINUTE: int = 30
+    RATE_LIMIT_GENERAL_PER_MINUTE: int = 120
+
+    # --- Security / observability ---
+    LOG_FORMAT: str = "text"  # text | json
+    TOKEN_BLACKLIST_TTL_DAYS: int = 8  # >= ACCESS_TOKEN_EXPIRE_MINUTES
+
+    # --- RAG answer cache (in-process, per user) ---
+    RAG_CACHE_ENABLED: bool = True
+    RAG_CACHE_TTL_SECONDS: int = 300
+    RAG_CACHE_MAX_ENTRIES: int = 128
+
+    # --- Model allowlist per provider (empty list = any model allowed) ---
+    ALLOWED_MODELS: dict[str, list[str]] = Field(
+        default_factory=lambda: {
+            "ollama": [],  # local; user-controlled
+            "openai": ["gpt-3.5-turbo", "gpt-4o-mini", "gpt-4o"],
+            "gemini": ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.0-flash"],
+            "grok": ["grok-beta", "grok-2-latest"],
+        }
+    )
+
     @field_validator("JWT_SECRET_KEY")
     @classmethod
     def _validate_jwt_secret(cls, v: str, info) -> str:
