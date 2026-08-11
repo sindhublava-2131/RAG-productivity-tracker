@@ -42,3 +42,17 @@ class Task(Base):
     actual_minutes: Mapped[int] = mapped_column(default=0)
 
     user: Mapped[User] = relationship("User", back_populates="tasks")
+
+
+class TokenBlacklist(Base):
+    """Revoked JWTs (by unique jti claim) for server-side logout support."""
+
+    __tablename__ = "token_blacklist"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    jti: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
