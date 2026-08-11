@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections import OrderedDict
 from typing import Any
 
 from core.config import settings
@@ -62,6 +63,29 @@ class RagPipeline:
         )
         self._grounding_validator = grounding_validator or GroundingValidator()
         self._llm_provider = llm_provider
+        self._cache: OrderedDict[tuple[Any, ...], tuple[float, dict[str, Any]]] = OrderedDict()
+
+    def _cache_get(self, key: tuple[Any, ...]) -> dict[str, Any] | None:
+        """Return a cached answer for the key if fresh (LRU, TTL-bounded)."""
+        if not settings.RAG_CACHE_ENABLED:
+            return None
+        item = self._cache.get(key)
+        if item is None:
+            return None
+        cached_at, result = item
+        if time.monotonic() - cached_at > settings.RAG_CACHE_TTL_SECONDS:
+            self._cache.pop(key, None)
+            return None
+        self._cache.move_to_end(key)
+        return result
+
+    def _cache_put(self, key: tuple[Any, ...], result: dict[str, Any]) -> None:
+        if not settings.RAG_CACHE_ENABLED:
+            return
+        self._cache[key] = (time.monotonic(), result)
+        self._cache.move_to_end(key)
+        while len(self._cache) > settings.RAG_CACHE_MAX_ENTRIES:
+            self._cache.popitem(last=False)
 
     def _render_prompt(self, context: str, user_name: str, question: str) -> str:
         return (
@@ -83,6 +107,10 @@ class RagPipeline:
     ) -> dict[str, Any]:
         start = time.time()
         provider_name = (provider or settings.RAG_PROVIDER or "ollama").lower()
+        cache_key: tuple[Any, ...] = (user_id, question.strip().lower(), provider_name, model_name)
+        cached = self._cache_get(cache_key)
+        if cached is not None:
+            return cached
 
         # 1. Retrieval (user-scoped, hybrid).
         candidates = self._retriever.retrieve(
@@ -167,7 +195,7 @@ class RagPipeline:
             error_type or "none",
         )
 
-        return {
+        result = {
             "answer": answer,
             "sources": sources,
             "confidence": confidence,
@@ -177,6 +205,8 @@ class RagPipeline:
             "model": llm_model or provider_name,
             "execution_time_ms": elapsed_ms,
         }
+        self._cache_put(cache_key, result)
+        return result
 
     def _resolve_provider(self, provider_name: str, model_name: str | None) -> LLMProvider:
         if self._llm_provider is not None:
