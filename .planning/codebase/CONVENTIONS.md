@@ -5,57 +5,58 @@
 ## Naming Patterns
 
 **Files:**
-- **Python modules:** `snake_case.py`, one domain per file — `backend/models.py`, `backend/schemas.py`, `backend/auth.py`, `backend/rag_service.py`, `backend/database.py`. Route modules live in `backend/routes/` with a `_routes` suffix: `backend/routes/auth_routes.py`, `backend/routes/task_routes.py`, `backend/routes/analytics_routes.py`, `backend/routes/rag_routes.py`.
-- **React components:** PascalCase `*.tsx`, one component per file — `frontend/src/components/CuteHeader.tsx`, `frontend/src/components/TaskManager.tsx`, `frontend/src/components/AuthModal.tsx`, `frontend/src/components/AnalyticsDashboard.tsx`, `frontend/src/components/AIAssistant.tsx`.
+- **Python modules:** `snake_case.py`, one domain per file — `backend/models.py`, `backend/schemas.py`, `backend/auth.py`, `backend/database.py`, `backend/core/config.py`. Route modules live in `backend/routes/` with a `_routes` suffix: `health_routes.py`, `auth_routes.py`, `task_routes.py`, `analytics_routes.py`, `rag_routes.py`. RAG package modules use single-purpose names in `backend/services/rag/`: `retrieval.py`, `reranking.py`, `grounding.py`, `context.py`, `embeddings.py`, `memory.py`, `vector_store.py`, `pipeline.py`, `service.py`.
+- **React components:** PascalCase `*.tsx`, one component per file — `frontend/src/components/CuteHeader.tsx`, `TaskManager.tsx`, `AuthModal.tsx`, `AnalyticsDashboard.tsx`, `AIAssistant.tsx`.
 - **Service layer:** lowercase `api.ts` under `frontend/src/services/api.ts`.
-- **Shared types:** `frontend/src/types.ts` (singular filename, not `types.ts`).
+- **Shared types:** `frontend/src/types.ts`.
+- **Tests:** `test_<domain>.py` in `backend/tests/`; `*.test.ts(x)` co-located with the unit in the frontend.
 
 **Functions:**
-- **Python:** `snake_case` (`get_password_hash`, `create_access_token`, `store_memory`, `run_rag_pipeline` in `backend/auth.py` and `backend/rag_service.py`). Route handler names are descriptive verbs in `backend/routes/*.py`: `get_tasks`, `create_task`, `update_task`, `complete_task`, `delete_task`, `login_user`, `register_user`.
-- **TypeScript:** `camelCase` for hooks and handlers (`fetchAnalytics`, `handleSave`, `handleComplete`, `openCreateModal` in `frontend/src/components/TaskManager.tsx`; `initApp`, `reloadData` in `frontend/src/App.tsx`).
+- **Python:** `snake_case` (`get_password_hash`, `create_access_token`, `store_memory_from_task`, `format_task_memory` in `backend/auth.py` and `backend/services/rag/memory.py`). Route handlers are descriptive verbs in `backend/routes/*.py`: `get_tasks`, `create_task`, `update_task`, `complete_task`, `delete_task`, `login_user`, `register_user`, `query_rag_assistant`.
+- **TypeScript:** `camelCase` for hooks and handlers (`fetchAnalytics`, `handleSave`, `handleComplete`, `openCreateModal` in `frontend/src/components/TaskManager.tsx`; `reloadData`, `handleLogout` in `frontend/src/App.tsx`).
 
 **Variables:**
-- **Python:** `snake_case` (`db`, `current_user`, `task_in`, `status_filter` in `backend/routes/task_routes.py`).
-- **TypeScript:** `camelCase` (`filterStatus`, `editingTask`, `isModalOpen` in `frontend/src/components/TaskManager.tsx`). Boolean state uses `is*`/`has*` prefix (`isOpen`, `isLogin`, `isAuthOpen`, `loading`).
-- State setters always follow `const [x, setX] = useState(...)` (`frontend/src/App.tsx`, `frontend/src/components/*.tsx`).
+- **Python:** `snake_case` (`db`, `current_user`, `task_in`, `status_filter` in `backend/routes/task_routes.py`); private helpers prefixed `_` (`_utcnow`, `_persist_memory`, `_aware`, `_parse_iso`).
+- **TypeScript:** `camelCase` (`filterStatus`, `editingTask`, `isModalOpen` in `frontend/src/components/TaskManager.tsx`). Boolean state uses `is*` prefix (`isOpen`, `isLogin`, `isAuthOpen`). State setters follow `const [x, setX] = useState(...)`.
 
 **Types:**
-- **Python:** Pydantic schemas in `backend/schemas.py` use `Base`-suffixed naming: `TaskBase` → `TaskCreate`, `TaskUpdate`, `TaskResponse`; auth has `UserCreate`, `UserLogin`, `UserResponse`, `Token`.
-- **TypeScript:** `interface` names are plain domain nouns (`User`, `Task`, `AnalyticsData`, `MemoryItem`, `RAGResponse`) in `frontend/src/types.ts`; string-literal union types use `Type` suffix (`PriorityType`, `StatusType`). Component props use a local `interface Props` in each component file (see `frontend/src/components/TaskManager.tsx`, `CuteHeader.tsx`, `AuthModal.tsx`).
+- **Python:** Pydantic schemas in `backend/schemas.py` use base/suffix naming: `TaskBase` → `TaskCreate`/`TaskUpdate`/`TaskResponse`; auth has `UserCreate`, `UserLogin`, `UserResponse`, `Token`; enums `Priority`, `Status`, `TaskAction`.
+- **TypeScript:** `interface` names are plain domain nouns (`User`, `Task`, `AnalyticsData`, `MemoryRecord`, `RAGResponse`) in `frontend/src/types.ts`; string-literal union types use `Type` suffix (`PriorityType`, `StatusType`). Component props use a local `interface Props` per file (see `frontend/src/components/TaskManager.tsx`, `CuteHeader.tsx`, `AuthModal.tsx`).
 
 ## Code Style
 
 **Formatting:**
-- **Python:** 4-space indentation, ~100 char lines, standard library imports first, then third-party, then local modules. No formatting tool (black/ruff) configured — no `.prettierrc`, no `setup.cfg`, no `pyproject.toml` exist. Formatting is manual.
-- **TypeScript:** semicolons required and always present (`frontend/src/App.tsx`, all components, `frontend/src/services/api.ts`). Exceptions: `frontend/vite.config.ts` and `frontend/postcss.config.js` use no-semicolon style. No Prettier config exists.
-- Quotes: single quotes everywhere in TS/TSX (`import { User } from '../types';`). No config file enforces this — it is a de-facto convention.
+- **Python:** 4-space indentation, 110-char line length (set in `[tool.ruff] line-length = 110`), `from __future__ import annotations` at the top of every module, standard-library imports first then third-party then local. Ruff config in `backend/pyproject.toml` (`select = ["E", "F", "W", "I", "UP", "B", "ASYNC"]`, `ignore = ["E501"]`).
+- **TypeScript:** semicolons required and always present (`frontend/src/App.tsx`, all components, `frontend/src/services/api.ts`). Single quotes everywhere in TS/TSX (`import { User } from '../types';`). No Prettier config exists.
 
 **Linting:**
-- `frontend/package.json` defines `"lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"` but **no ESLint config file and no `eslint` dependency exist** — `npm run lint` currently fails. Before writing new frontend code, verify lint can run; if not, add `eslint` + a flat config (`eslint.config.js`) or remove the script.
-- No Python linter configured.
+- Backend: `ruff check .` (CI + setup.py install `ruff`); typecheck `mypy --config-file pyproject.toml` (pydantic plugin, strict-ish with `ignore_missing_imports = true`).
+- Frontend: `npm run lint` (ESLint 8 + typescript-eslint + react-hooks + react-refresh via `frontend/.eslintrc.cjs`; `--max-warnings 0`).
 
 **TypeScript strictness:**
-- `frontend/tsconfig.json` sets `"strict": true`, `"noFallthroughCasesInSwitch": true`, but `noUnusedLocals` and `noUnusedParameters` are `false`. Keep `strict` mode on when writing new code; do not add `any` where a type is available.
-- `App.tsx` passes `analytics?.current_streak_days || 4` — optional chaining with fallback is the established pattern for nullable data.
+- `frontend/tsconfig.json` sets `"strict": true` and `"noFallthroughCasesInSwitch": true`; `noUnusedLocals`/`noUnusedParameters` are `false` (so the `_completedToday` unused-prop pattern in `CuteHeader.tsx` compiles). Keep `strict` on; avoid `any` where a type is available (`no-explicit-any` is a warn-level ESLint rule).
 
 ## Import Organization
 
-**Python (`backend/routes/*.py`):**
-1. Third-party framework imports (`from fastapi import APIRouter, Depends, HTTPException, status`, `from sqlalchemy.orm import Session`)
-2. Standard library (`from typing import List, Optional`, `from datetime import datetime`)
-3. Local modules — absolute, non-relative: `import models`, `import schemas`, `import auth`, `from database import get_db`, `import rag_service`
+**Python (`backend/routes/*.py`, `backend/services/rag/*.py`):**
+1. Standard library (`from __future__ import annotations`, `logging`, `datetime`)
+2. Third-party (`from fastapi import APIRouter, Depends, HTTPException, status`, `from sqlalchemy.orm import Session`, `import httpx`)
+3. Local modules — absolute, non-relative: `import models`, `import schemas`, `import auth`, `from database import get_db`, `from services.rag.service import get_rag_service`
 
-Example from `backend/routes/task_routes.py`:
+Example from `backend/routes/rag_routes.py`:
 ```python
-from fastapi import APIRouter, Depends, HTTPException, status
+from __future__ import annotations
+
+from datetime import UTC, datetime
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
-from typing import List, Optional
-from datetime import datetime
+
+import auth
 import models
 import schemas
-import auth
 from database import get_db
-import rag_service
+from services.rag.service import get_rag_service
 ```
 
 **TypeScript (`frontend/src/**`):**
@@ -63,82 +64,79 @@ import rag_service
 2. Local relative imports, `../` style: `import { User, Task } from '../types';`, `import { TaskService } from '../services/api';`
 
 **Path Aliases:**
-- None. Frontend uses relative imports only (`../types`, `../services/api`). Vite proxy maps `/api` → `http://localhost:8000` in `frontend/vite.config.ts`; the frontend never references the backend URL directly (`const API_BASE = '/api'` in `frontend/src/services/api.ts`).
+- None. Frontend uses relative imports only. Vite proxy maps `/api` → `http://localhost:8000` in `frontend/vite.config.ts`; the frontend never references the backend URL directly (`const API_BASE = '/api'` in `frontend/src/services/api.ts`).
 
 ## Error Handling
 
-**Backend — FastAPI `HTTPException`:**
-- Raise `HTTPException(status_code=..., detail="...")` for expected failures. Recurring patterns:
-  - 404 with `detail="Task not found"` — repeated verbatim in `backend/routes/task_routes.py` (`get_tasks` path at lines 67–69, `complete_task` 122–124, `delete_task` 150–152).
-  - 400 `detail="Email address already registered."` in `backend/routes/auth_routes.py:13-17`.
-  - 401 with `headers={"WWW-Authenticate": "Bearer"}` in `backend/auth.py:36-40` and `backend/routes/auth_routes.py:41-44`.
-  - 400 `detail="Question cannot be empty."` in `backend/routes/rag_routes.py:17-18`.
-- Use `status.HTTP_404_NOT_FOUND` style constants from `fastapi import status` where convenient, but raw literals (`status_code=404`, `status_code=400`) are also used — prefer `status.HTTP_*` constants for new code (`backend/routes/auth_routes.py` is the reference).
-- Authentication dependency: `auth.get_current_user` (`backend/auth.py:35-51`) is injected via `Depends(...)` into every protected route and raises the 401 itself — routes do not re-check auth.
+**Backend — typed, layered:**
+- `HTTPException` for expected API failures: duplicate email → 400 (`backend/routes/auth_routes.py`), bad credentials → 401 with `WWW-Authenticate` header, missing task → 404 with `detail="Task not found"` (`backend/routes/task_routes.py`), empty question → 400 (`backend/routes/rag_routes.py`). Use `status.HTTP_*` constants (`status.HTTP_404_NOT_FOUND`).
+- `MemoryIngestionError` (subclass of `RuntimeError`) for vector-store persistence failures (`backend/services/rag/memory.py`) — routes catch and log it (best-effort, see ARCHITECTURE anti-patterns).
+- `LLMError` (subclass of `RuntimeError`) for provider call failures; shared `post_json` in `backend/services/rag/providers/_http.py` retries with backoff then raises; the pipeline converts failures into a graceful "currently unavailable" answer with `confidence=0`, `grounded=False`.
+- Authentication dependency `auth.get_current_user` (`backend/auth.py`) raises 401 itself — routes never re-check auth.
 
-**Frontend — defensive try/catch with mock fallback:**
-- `frontend/src/services/api.ts` wraps every axios call in `try/catch`; on failure it returns in-memory mock data instead of rethrowing (`catch (e) { return [...mockTasks]; }`). This is intentional (standalone preview mode) but means **frontend code cannot distinguish a failed API call from a successful mock response** — do not add error propagation logic that assumes the service layer throws.
-- Components that need error display keep the try/catch locally: `AuthModal.tsx:36-37` does `catch (err: any) { setError(err.response?.data?.detail || 'Authentication failed...') }`.
-- `AIAssistant.tsx:31-33` uses `catch (e) { console.error(e); }` — the only `console.*` usage in the frontend; prefer this over silent swallow for non-UI errors.
-- `TaskManager.tsx:78-79` uses browser `prompt()`/`confirm()` for quick input — acceptable here, but modal-based forms are the established richer pattern.
+**Frontend — typed `ApiError` propagation (no mock fallback):**
+- `frontend/src/services/api.ts` defines `ApiError extends Error` with `status` and `detail`; every service method catches axios/network errors and rethrows `toApiError(e)`. The old mock-fallback engine has been removed — errors are visible to the UI.
+- `extractDetail()` handles FastAPI `detail` strings or arrays, network errors ("Network error — cannot reach the server..."), and unknown errors.
+- Components display `error.message`: `AuthModal.tsx` shows it inline; `AIAssistant.tsx` shows an error card; `App.tsx` catches load failures and resets state to empty rather than crashing.
+- The axios response interceptor handles 401 globally: clears `localStorage`, calls `setUnauthorizedHandler` (wired in `App.tsx` to log out and reopen the auth modal).
 
 ## Logging
 
-**Framework:** Python `logging` module; frontend uses `console.error` only.
+**Framework:** stdlib `logging` configured once in `backend/main.py` (`level=settings.LOG_LEVEL`, format `%(asctime)s %(levelname)s [%(name)s] %(message)s`); frontend uses `console.error` only.
 
 **Patterns:**
-- `backend/rag_service.py:32` creates a module logger: `logger = logging.getLogger("rag_service")`.
-- Log levels used: `logger.warning` for import fallback (`rag_service.py:44`), `logger.error` for ChromaDB/store/API failures (`rag_service.py:124`, `172`, `275`, `292`, `314`), `logger.info` for expected Ollama fallback (`rag_service.py:253`).
-- `backend/main.py:131` uses `print(f"Startup seeding error: {e}")` in the startup seed — a one-off; use `logger.error` in new code.
-- No log formatting/configuration file exists; logging is default-config.
+- Named loggers per module: `logger = logging.getLogger("cozy.main")`, `"cozy.auth"`, `"cozy.routes.tasks"`, `"cozy.rag.service"`, `"cozy.rag.pipeline"`, `"cozy.rag.embeddings"`, `"cozy.rag.providers"`.
+- Request-context middleware in `backend/main.py` logs `request_id method path status latency_ms` for every request and returns `X-Request-Id`.
+- Key events logged: RAG query summary (`user_id`, retrieval/rerank counts, grounded, latency, provider, model, error_type), memory persistence failures (`MemoryIngestionError`), provider retries/fallbacks, embedding model load.
+- No structured logging / log aggregation.
 
 ## Comments
 
 **When to Comment:**
-- Python: section divider comments with `# ---` banners (`backend/rag_service.py`: `# --- Vector Store Operations ---`, `# --- Multi-Agent Modules ---`; `backend/schemas.py`: `# --- Auth Schemas ---`), and `# ---` in `frontend/src/services/api.ts` (`// --- Mock Data Engine ... ---`). Match this style when adding sections.
-- Purpose comments before non-obvious logic, e.g. `# Check if marked completed` in `backend/routes/task_routes.py:83`, `# --- Convert task creation to RAG Memory ---` at line 49.
+- Python: module docstrings on every `services/rag/` module and on `core/config.py`; short docstrings on classes (`HybridRetriever`, `Reranker`, `GroundingValidator`, `RagService`, `MemoryIngestionService`) and key functions (`_utcnow`, `format_task_memory`, `_persist_memory`); section divider comments with `# ---` (`backend/schemas.py`: `# --- Auth Schemas ---`, `# --- Task Schemas ---`).
+- Purpose comments before non-obvious logic, e.g. `# SQLite strips tzinfo from DateTime(timezone=True); re-attach UTC` in `backend/routes/analytics_routes.py`.
 - Frontend JSX: `{/* Section name */}` comments inside `frontend/src/components/*.tsx` (`{/* Filter & Search Bar */}`, `{/* Task Cards Grid */}` in `TaskManager.tsx`).
 
 **JSDoc/TSDoc:**
-- Not used anywhere in the frontend — no `/** */` doc comments on functions or components.
-- Python: `backend/rag_service.py` is the only module with docstrings — a rich module-level docstring (lines 1–22) and short docstrings on `format_task_memory` (54–61), `store_memory` (103), and the agent classes (`RetrievalAgent` 141–143, `EvaluatorAgent` 194–197, `MultiLLMQueryAgent` 216–219). Route handlers and `backend/auth.py` functions have no docstrings.
+- Not used in the frontend. Python uses docstrings on non-trivial modules/classes; route handlers and small helpers generally have none.
 
 ## Function Design
 
-**Size:** Route handlers are compact and single-purpose (auth routes 10–15 lines each in `backend/routes/auth_routes.py`). `backend/routes/analytics_routes.py` `get_analytics` is a 96-line monolith computing 11 metrics inline — do not extend it; extract metric helpers if adding analytics logic. `backend/rag_service.py` `_generate_smart_fallback` is a large keyword-branching function — keep branches as separate helpers when extending.
+**Size:** Route handlers are compact and single-purpose. `backend/routes/analytics_routes.py` `get_analytics` is a ~80-line monolith computing 11 metrics inline with helper `_aware` — a candidate for extraction, but intentionally self-contained. RAG pipeline stages are split across modules (`retrieval.py`, `reranking.py`, `grounding.py`, `context.py`) — keep new logic in the matching module rather than growing `pipeline.py`.
 
-**Parameters:** FastAPI route handlers use `Depends()` for db session and current user as the last two params: `db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)` (`backend/routes/task_routes.py:14-19`). RAG pipeline functions use keyword-argument style calls (`backend/routes/rag_routes.py:20-26` passes `user_id=`, `user_name=`, `question=`, `provider=`, `model_name=`).
+**Parameters:** FastAPI route handlers use `Depends()` for db session and current user: `db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)`. RAG service calls use keyword-only style: `rag.store_memory_from_task(user_id=..., task_id=..., action=..., content=...)`.
 
 **Return Values:**
-- Pydantic response models are declared on the decorator: `@router.get("", response_model=List[schemas.TaskResponse])`; the handler returns ORM objects directly and Pydantic serializes them (`from_attributes = True` in `backend/schemas.py`).
-- Python functions without a meaningful result return `None` implicitly; `store_memory` returns the generated `mem_id` string (`backend/rag_service.py:102`).
-- Frontend service methods return `Promise<T>` and annotate them (`async getTasks(): Promise<Task[]>` in `frontend/src/services/api.ts:136`). Component event handlers return `void`.
+- Pydantic response models declared on the decorator (`@router.get("", response_model=list[schemas.TaskResponse])`); handlers return ORM objects, Pydantic serializes them (`from_attributes=True`).
+- `store_memory_from_task` returns the memory id string; `list_memories` returns `(records, total)`; pipeline `run()` returns a dict matching `RAGQueryResponse`.
+- Frontend service methods return `Promise<T>` with explicit annotations (`async getTasks(): Promise<Task[]>`).
 
 ## Module Design
 
 **Exports:**
-- Backend: `router = APIRouter(prefix="/api/<area>", tags=["..."])` is the single export of every route module (`backend/routes/*.py`), registered in `backend/main.py:29-32` via `app.include_router(x_routes.router)`.
-- Frontend: components use **named exports** (`export const TaskManager: React.FC<Props> = ...`). `frontend/src/App.tsx` has both a named export (`export const App`) and a default export (`export default App`) — `main.tsx` imports the default. Keep named exports for components; reserve default export for the app root.
-- Services export const objects: `export const AuthService = {...}`, `TaskService`, `AnalyticsService`, `RAGService` from `frontend/src/services/api.ts`.
-- Types export `interface`/`type` declarations from `frontend/src/types.ts`.
+- Backend: `router = APIRouter(prefix="/api/<area>", tags=["..."])` is the single export of every route module, registered in `backend/main.py` via `app.include_router(x_routes.router)`. RAG modules export their classes + `get_rag_service()`/`configure_rag_service()`/`reset_rag_service()` (`backend/services/rag/service.py`). `settings` is the single export of `backend/core/config.py`.
+- Frontend: components use **named exports** (`export const TaskManager: React.FC<Props> = ...`). `frontend/src/App.tsx` has both named (`export const App`) and default exports. Services export const objects (`AuthService`, `TaskService`, `AnalyticsService`, `RAGService`) plus `api`, `ApiError`, `setUnauthorizedHandler`. Types export `interface`/`type` declarations from `frontend/src/types.ts`.
 
-**Barrel Files:** None — components import from explicit paths (`import { CuteHeader } from './components/CuteHeader'`).
+**Barrel Files:** `__init__.py` files in `backend/routes/`, `backend/services/rag/`, and `backend/tests/` are empty — imports are always explicit from module paths.
 
 ## React-Specific Conventions
 
-- Function components typed `React.FC<Props>` (all six components). Props defined as local `interface Props` and destructured in the signature (`frontend/src/components/CuteHeader.tsx:15-23`).
-- Hooks: `useState` + `useEffect` only; no custom hooks, no context, no router (tab switching via `useState<'tasks' | 'analytics' | 'assistant'>` in `frontend/src/App.tsx:13`).
+- Function components typed `React.FC<Props>`; props defined as local `interface Props` and destructured in the signature (`frontend/src/components/CuteHeader.tsx`).
+- Hooks: `useState` + `useEffect` only; no custom hooks, no context, no router (tab switching via `useState<'tasks' | 'analytics' | 'assistant'>` in `frontend/src/App.tsx`).
 - `useEffect(() => { fetchX(); }, [])` mount-and-fetch pattern in `App.tsx`, `AnalyticsDashboard.tsx`, `AIAssistant.tsx`.
-- Tailwind utility classes with arbitrary hex values `bg-[#FFDFE5]` are used everywhere; the `tailwind.config.js` theme also defines semantic tokens (`cozy.rose`, `cozy.lavender`, `shadow-cozy`, `rounded-4xl`). Prefer theme tokens over raw arbitrary values in new code.
-- `className` conditional logic uses template literals with ternaries (`TaskManager.tsx:192-194`, `CuteHeader.tsx:50-54`).
+- Tailwind utility classes with arbitrary hex values (`bg-[#FFDFE5]`) everywhere; `frontend/tailwind.config.js` also defines semantic tokens (`cozy.rose`, `cozy.lavender`, `shadow-cozy`, `rounded-4xl`). Both are used — prefer theme tokens for new code, arbitrary values are accepted.
+- `className` conditionals use template literals with ternaries (`TaskManager.tsx`, `CuteHeader.tsx`).
 - Emojis in UI copy are a deliberate aesthetic convention (`🌸`, `🐱`, `🤖`) — keep for consistency.
+- Error/empty states are cute and friendly ("No tasks found! 🐱💤"), matching the cozy brand.
 
 ## Security / Credential Conventions
 
-- `backend/auth.py:12` has a hardcoded default JWT secret fallback: `SECRET_KEY = os.getenv("JWT_SECRET_KEY", "cozy_rag_productivity_tracker_super_secret_key_2026")`. Set `JWT_SECRET_KEY` in production; never rely on the fallback.
-- `backend/main.py:38-44` seeds a demo user with hardcoded password `cozy123` — demo-only credentials, not for production data.
-- Frontend stores the JWT in `localStorage` under `cozy_token` (`frontend/src/services/api.ts:14, 98`) and attaches it via an axios request interceptor (lines 13–19) — the single auth wiring point.
-- LLM API keys are read from env vars at call time (`OPENAI_API_KEY`, `GEMINI_API_KEY`, `GROK_API_KEY`/`XAI_API_KEY` in `backend/rag_service.py:257-314`) — never hardcode keys. No `.env` file is committed; `.env` is gitignored.
+- `JWT_SECRET_KEY` has **no default**: production fails fast (`backend/core/config.py` validator); development generates an ephemeral per-process secret via `secrets.token_urlsafe(48)`. **Do not reintroduce a hardcoded default.**
+- Passwords hashed with bcrypt directly (`backend/auth.py`) — no passlib.
+- LLM API keys read from settings/env only (`OPENAI_API_KEY`, `GEMINI_API_KEY`, `GROK_API_KEY`); Gemini key sent via `x-goog-api-key` header, never a URL query param.
+- Demo seeding gated by `SEED_DEMO` and only honored when `APP_ENV != production` (`backend/main.py`).
+- Frontend stores the JWT in `localStorage` under `cozy_token` and injects via axios request interceptor — the single auth wiring point; 401 clears it automatically.
+- No `.env` file is committed; `.env` is gitignored.
 
 ---
 

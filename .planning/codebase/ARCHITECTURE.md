@@ -5,36 +5,38 @@
 
 ## System Overview
 
-Two-tier web application: a React SPA (Vite + Tailwind) frontend and a FastAPI backend that combines a SQL CRUD API with a multi-agent RAG memory pipeline. No server-side rendering; the frontend proxies all `/api` calls to the backend during dev and is served as static files by nginx in Docker.
+Two-tier web application: a React SPA (Vite + Tailwind) frontend and a FastAPI backend that combines a SQL CRUD API with a grounded RAG memory pipeline. No server-side rendering; the frontend proxies all `/api` calls to the backend during dev (Vite proxy) and nginx reverse-proxies them in Docker.
 
 ```text
 ┌─────────────────────────────────────────────────────────────────┐
 │                       Frontend (React SPA)                       │
-│  App.tsx ─ tab router & global state                             │
-│  ├── CuteHeader.tsx      ├── TaskManager.tsx                     │
-│  ├── AuthModal.tsx       ├── AnalyticsDashboard.tsx              │
-│  └── AIAssistant.tsx                                             │
-│  `frontend/src/components/`                                      │
-├─────────────────────────────────────────────────────────────────┤
-│                       Services Layer                             │
-│  `frontend/src/services/api.ts` (axios + mock fallback)          │
-└──────────────────────────────┬──────────────────────────────────┘
-                               │ HTTP /api/* (JWT Bearer)
-                               ▼
+│  `frontend/src/App.tsx` — tab router & global state              │
+│  ├── CuteHeader.tsx        ├── TaskManager.tsx                  │
+│  ├── AuthModal.tsx         ├── AnalyticsDashboard.tsx           │
+│  └── AIAssistant.tsx        (`frontend/src/components/`)        │
+│  Services: `frontend/src/services/api.ts` (axios + interceptors) │
+├──────────────────────────────┬──────────────────────────────────┤
+│  Dev: Vite proxy `/api` → 8000 (vite.config.ts)                 │
+│  Prod: nginx reverse-proxy `/api` → backend:8000 (nginx.conf)   │
+└──────────────────────────────▼──────────────────────────────────┘
 ┌─────────────────────────────────────────────────────────────────┐
 │                        Backend (FastAPI)                         │
-│  `backend/main.py` app factory + router registration             │
-│  Routes: auth_routes | task_routes | analytics_routes            │
-│          | rag_routes   (`backend/routes/`)                      │
-│  ├── SQLAlchemy ORM (`backend/models.py`, `database.py`)         │
-│  └── RAG Pipeline  (`backend/rag_service.py`)                    │
-└───────────────┬────────────────────────────────┬─────────────────┘
-                │                                │
-                ▼                                ▼
+│  `backend/main.py` — app factory, lifespan, routers, middleware  │
+│  Routers (`backend/routes/`):                                    │
+│    health_routes | auth_routes | task_routes                     │
+│    | analytics_routes | rag_routes                               │
+│  ├── Config: `backend/core/config.py` (pydantic-settings)        │
+│  ├── ORM: `backend/models.py`, `backend/database.py`             │
+│  ├── Auth: `backend/auth.py` (PyJWT + bcrypt)                    │
+│  ├── Migrations: `backend/alembic/`                              │
+│  └── RAG subsystem: `backend/services/rag/` (package)            │
+└───────────────┬───────────────────────────────┬──────────────────┘
+                │                               │
+                ▼                               ▼
 ┌─────────────────────────────┐   ┌─────────────────────────────────┐
-│  SQLite / PostgreSQL        │   │  ChromaDB vector store          │
+│  SQLite (dev) / PostgreSQL  │   │  ChromaDB vector store          │
 │  `DATABASE_URL` (env)       │   │  + SentenceTransformers         │
-│  Users, Tasks tables        │   │  (`backend/chroma_db/`)         │
+│  users + tasks tables       │   │  (`backend/chroma_db/`)         │
 └─────────────────────────────┘   └─────────────────────────────────┘
 ```
 
@@ -42,96 +44,103 @@ Two-tier web application: a React SPA (Vite + Tailwind) frontend and a FastAPI b
 
 | Component | Responsibility | File |
 |-----------|----------------|------|
-| App root | Tab navigation, user/task/analytics state, auth modal lifecycle | `frontend/src/App.tsx` |
-| Services | All HTTP to backend + in-browser mock fallback when API unavailable | `frontend/src/services/api.ts` |
+| App root | Tab navigation, user/task/analytics state, auth modal lifecycle, 401 handling | `frontend/src/App.tsx` |
+| Services | All HTTP to backend; token injection; 401 interceptor; typed `ApiError` | `frontend/src/services/api.ts` |
 | Shared types | Mirrors backend Pydantic response shapes | `frontend/src/types.ts` |
-| FastAPI app factory | CORS, router registration, DB table creation, demo seeding | `backend/main.py` |
+| FastAPI app factory | Config, CORS, request-context middleware, router registration, lifespan (schema + demo seed) | `backend/main.py` |
+| Settings | Single typed settings object (pydantic-settings), env-driven | `backend/core/config.py` |
 | DB session layer | Engine, session factory, declarative Base, `get_db` dependency | `backend/database.py` |
 | ORM models | `users` and `tasks` (strict 2-table schema) | `backend/models.py` |
-| Pydantic schemas | Request/response validation for all routes | `backend/schemas.py` |
+| Pydantic schemas | Request/response validation + enums (`Priority`, `Status`, `TaskAction`) | `backend/schemas.py` |
 | Auth helpers | bcrypt hashing, JWT encode/decode, `get_current_user` dependency | `backend/auth.py` |
 | Auth routes | Register, login, current-user profile | `backend/routes/auth_routes.py` |
-| Task routes | CRUD + lifecycle→RAG memory emission | `backend/routes/task_routes.py` |
+| Task routes | CRUD + lifecycle → RAG memory emission | `backend/routes/task_routes.py` |
 | Analytics routes | 11 productivity metrics computed in-memory | `backend/routes/analytics_routes.py` |
-| RAG routes | `/api/rag/query` and `/api/rag/memories` | `backend/routes/rag_routes.py` |
-| RAG pipeline | Memory formatting, ChromaDB storage, 3-agent pipeline | `backend/rag_service.py` |
+| RAG routes | `/api/rag/query`, `/api/rag/memories`, memory delete | `backend/routes/rag_routes.py` |
+| Health routes | `/health/live`, `/health/ready` | `backend/routes/health_routes.py` |
+| RAG service root | Composition root; lazy wiring; singleton + test injection | `backend/services/rag/service.py` |
+| RAG pipeline | retrieval → rerank → context → generate → validate | `backend/services/rag/pipeline.py` |
 
 ## Pattern Overview
 
-**Overall:** Layered client-server monolith with a service facade on the frontend and thin router + service-module structure on the backend.
+**Overall:** Layered client-server monolith with a service facade on the frontend and thin router + service-package structure on the backend.
 
 **Key Characteristics:**
-- Backend follows FastAPI idioms: routers in `backend/routes/`, dependency-injected DB sessions via `Depends(get_db)`, Pydantic schemas for I/O boundaries
-- RAG pipeline is implemented as module-level classes with static methods (agent classes) orchestrated by a module-level `run_rag_pipeline()` function
-- Frontend uses a single service module (`frontend/src/services/api.ts`) exposing four exported service objects; every service method falls back to in-memory mock data on any API error, so the SPA renders standalone without the backend
-- No framework-level state management (no Redux/Zustand); state lives in `App.tsx` via `useState` and is passed down as props; tab components fetch their own data directly from services
+- Backend follows FastAPI idioms: routers in `backend/routes/`, dependency-injected DB sessions via `Depends(get_db)`, Pydantic schemas for I/O boundaries, `Depends(auth.get_current_user)` for protected routes
+- RAG subsystem is a proper package (`backend/services/rag/`) with clear single-responsibility modules: `retrieval.py`, `reranking.py`, `context.py`, `grounding.py`, `embeddings.py`, `memory.py`, `vector_store.py`, `pipeline.py`, plus a `providers/` package for LLM backends
+- All RAG components depend on abstractions (`VectorStore`, `EmbeddingService`, `LLMProvider`) enabling full offline test fakes (`InMemoryVectorStore`, `FakeEmbeddingService`, `FakeLLMProvider`)
+- Frontend service layer (`frontend/src/services/api.ts`) no longer mocks on error — real `ApiError`s propagate to components (the previous mock-fallback engine was removed)
+- No framework-level state management (no Redux/Zustand); state lives in `App.tsx` via `useState` and is passed down as props; tab components fetch their own data
 
 ## Layers
 
 **Frontend Presentation Layer:**
 - Purpose: Render UI and handle user interaction
 - Location: `frontend/src/components/`
-- Contains: Presentational + container-style components (`CuteHeader.tsx`, `TaskManager.tsx`, `AnalyticsDashboard.tsx`, `AIAssistant.tsx`, `AuthModal.tsx`)
+- Contains: Presentational + container components (`CuteHeader.tsx`, `TaskManager.tsx`, `AnalyticsDashboard.tsx`, `AIAssistant.tsx`, `AuthModal.tsx`)
 - Depends on: `frontend/src/services/api.ts`, `frontend/src/types.ts`
 - Used by: `frontend/src/App.tsx`
 
 **Frontend Service Layer:**
-- Purpose: Centralize HTTP calls, JWT injection, and mock fallback data
+- Purpose: Centralize HTTP calls, JWT injection, typed error handling
 - Location: `frontend/src/services/api.ts`
-- Contains: `AuthService`, `TaskService`, `AnalyticsService`, `RAGService` + module-level `mockTasks`/`mockMemories`
+- Contains: axios instance with request/response interceptors, `ApiError`, `setUnauthorizedHandler`, and `AuthService` / `TaskService` / `AnalyticsService` / `RAGService`
 - Depends on: axios, `frontend/src/types.ts`
 - Used by: `App.tsx` and all components
 
 **Backend API Layer (routers):**
 - Purpose: Expose REST endpoints, validate input, call ORM/service logic
 - Location: `backend/routes/`
-- Contains: `auth_routes.py`, `task_routes.py`, `analytics_routes.py`, `rag_routes.py`
-- Depends on: `backend/models.py`, `backend/schemas.py`, `backend/auth.py`, `backend/database.py`, `backend/rag_service.py`
+- Contains: `health_routes.py`, `auth_routes.py`, `task_routes.py`, `analytics_routes.py`, `rag_routes.py`
+- Depends on: `backend/models.py`, `backend/schemas.py`, `backend/auth.py`, `backend/database.py`, `backend/services/rag/*`
 - Used by: `backend/main.py`
 
-**Backend Core/Service Layer:**
+**Backend Service Layer:**
 - Purpose: Business logic, persistence, and the RAG pipeline
-- Location: `backend/` root modules (`auth.py`, `database.py`, `models.py`, `schemas.py`, `rag_service.py`)
+- Location: `backend/services/rag/` (RAG package) + root modules (`auth.py`, `database.py`, `models.py`, `schemas.py`, `core/config.py`)
 - Depends on: SQLAlchemy, ChromaDB, SentenceTransformers, external LLM APIs
 - Used by: `backend/routes/`
 
 **Data Layer:**
 - Purpose: Durable state — relational + vector
-- Location: SQLite file `backend/cozy_productivity.db` (or `DATABASE_URL`), ChromaDB dir `backend/chroma_db/`
-- Managed by: `backend/database.py`, `backend/rag_service.py`
+- Location: SQLite file `backend/cozy_productivity.db` (dev) / PostgreSQL 16 (prod via `docker-compose.yml`), ChromaDB dir `backend/chroma_db/`
+- Managed by: `backend/database.py`, `backend/services/rag/vector_store.py`
 
 ## Data Flow
 
 ### Primary Request Path (e.g., task list)
 
-1. `TaskManager.tsx` mounts / `App.tsx` calls `TaskService.getTasks()` (`frontend/src/services/api.ts:136`)
-2. axios request interceptor injects `Authorization: Bearer <cozy_token>` from `localStorage` (`frontend/src/services/api.ts:13-19`)
-3. Dev server proxies `/api` to `http://localhost:8000` via `frontend/vite.config.ts:9-14`; Docker: nginx serves SPA and proxies `/api`
-4. `task_routes.py:14` `get_tasks` runs, guarded by `Depends(auth.get_current_user)` → `auth.py:35` decodes JWT, loads user from DB
-5. SQLAlchemy query filters by `current_user.id`, ordered by `created_at desc` (`task_routes.py:20-27`)
-6. Result serialized via `schemas.TaskResponse` and returned; on network error the service returns `mockTasks` instead (`api.ts:141`)
+1. `App.tsx` / `TaskManager.tsx` calls `TaskService.getTasks()` (`frontend/src/services/api.ts`)
+2. axios request interceptor injects `Authorization: Bearer <cozy_token>` from `localStorage` (`frontend/src/services/api.ts`)
+3. Dev server proxies `/api` to `http://localhost:8000` via `frontend/vite.config.ts`; in Docker, nginx serves the SPA and proxies `/api` → `backend:8000` (`frontend/nginx.conf`)
+4. `task_routes.get_tasks` runs, guarded by `Depends(auth.get_current_user)` → `backend/auth.py` decodes JWT, loads user from DB
+5. SQLAlchemy query filters by `current_user.id`, ordered by `created_at desc` (`backend/routes/task_routes.py`)
+6. Result serialized via `schemas.TaskResponse` and returned; on any error the service throws `ApiError` (surfaced by components)
 
 ### Task CRUD → RAG Memory Flow
 
-1. `create_task`/`update_task`/`complete_task`/`delete_task` in `backend/routes/task_routes.py` commit the ORM change
-2. After commit, the route calls `rag_service.format_task_memory(action_type, task_data)` (`rag_service.py:54`) to produce a natural-language sentence (CREATE/COMPLETE/DELAY/UPDATE/OVERDUE)
-3. `rag_service.store_memory(user_id, text, action, task_id)` (`rag_service.py:102`) embeds the sentence with `all-MiniLM-L6-v2` and adds it to per-user ChromaDB collection `user_{user_id}_memories` (`rag_service.py:114`); falls back to module-level `in_memory_docs` list if ChromaDB/SentenceTransformers import fails (`rag_service.py:43-50`)
-4. Startup seeding in `backend/main.py:34-133` creates a demo user (`demo@cozy.app`), 5 tasks, and 4 extra historical memories
+1. `create_task` / `update_task` / `complete_task` / `delete_task` in `backend/routes/task_routes.py` commit the ORM change
+2. After commit, the route calls `format_task_memory(action, task_data)` from `backend/services/rag/memory.py` to produce a natural-language sentence (CREATE / UPDATE / COMPLETE / DELAY / DELETE / OVERDUE)
+3. `_persist_memory` calls `rag.store_memory_from_task(...)` → `MemoryIngestionService.build_memory` + `store` (`backend/services/rag/memory.py`), which embeds the text and adds it to the per-user ChromaDB collection `user_{user_id}_memories` (`backend/services/rag/vector_store.py`); memory ids use `uuid4` (no collision risk)
+4. Memory failures raise `MemoryIngestionError`, caught and logged by the route — the task op still succeeds (see CONCERNS.md)
+5. Optional startup seeding in `backend/main.py` lifespan creates demo user/tasks/memories when `SEED_DEMO` is on (non-production only)
 
-### RAG Query Flow (Multi-Agent Pipeline)
+### RAG Query Flow (Grounded Pipeline)
 
-1. `AIAssistant.tsx` sends question + provider to `RAGService.queryAssistant` → `POST /api/rag/query` (`backend/routes/rag_routes.py:12`)
-2. `rag_service.run_rag_pipeline()` (`rag_service.py:378`) executes:
-   - **Step 1 — Retrieval Agent:** `RetrievalAgent.retrieve(user_id, question, top_k=5)` (`rag_service.py:144`) — semantic search over ChromaDB, relevance = `1.0 - distance`
-   - **Step 2 — Evaluator Agent:** `EvaluatorAgent.evaluate(query, memories)` (`rag_service.py:198`) — filters memories with `relevance_score < 0.15`, computes confidence = `avg_score + 0.2` capped at 1.0
-   - **Step 3 — Multi-LLM Agent:** `MultiLLMQueryAgent.query(...)` (`rag_service.py:220`) — routes to Ollama (default), OpenAI, Gemini, or Grok via raw `requests.post`; every provider failure falls through to the rule-based `_generate_smart_fallback()` (`rag_service.py:319`)
-3. Response assembles `answer`, `retrieved_memories`, `evaluator_score`, agent names, `execution_time_ms` (`rag_service.py:404-412`) and returns as `schemas.RAGQueryResponse`
+1. `AIAssistant.tsx` sends question + provider to `RAGService.queryAssistant` → `POST /api/rag/query` (`backend/routes/rag_routes.py`)
+2. `RagPipeline.run()` (`backend/services/rag/pipeline.py`) executes:
+   - **Retrieval:** `HybridRetriever.retrieve(user_id, query, top_k)` — user-scoped ChromaDB semantic search combined with lexical token overlap (weighted `lexical_weight = 0.3`); mandatory `user_id` metadata filter (`backend/services/rag/retrieval.py`)
+   - **Rerank:** `Reranker.rerank(candidates, threshold, limit)` — deterministic 4-factor score (semantic 0.5 / lexical 0.25 / metadata 0.15 / 30-day recency decay 0.1); filters below `RAG_RELEVANCE_THRESHOLD` (0.25) (`backend/services/rag/reranking.py`)
+   - **Context:** `ContextBuilder.build(ranked)` — deduplicates by source id, caps at `RAG_MAX_SOURCES` (5) and `RAG_MAX_CONTEXT_CHARS` (4000) (`backend/services/rag/context.py`)
+   - **Generate:** `llm.complete(system_prompt, user_prompt)` with a hardcoded grounded system prompt (memories marked UNTRUSTED, citation format `[Source: <id>]` mandated); provider resolved via `get_provider()` registry; `asyncio.wait_for` timeout; LLM failure yields a graceful "unavailable" answer (`backend/services/rag/pipeline.py`)
+   - **Validate:** `GroundingValidator.validate(answer, sources)` — rejects hallucinated source ids; grounded only if ≥1 valid citation and no invalid ones (`backend/services/rag/grounding.py`)
+3. Response assembles `answer`, `sources`, `confidence`, `grounded`, `retrieval_count`, `provider`, `model`, `execution_time_ms` (`backend/schemas.py` RAGQueryResponse)
 
 ### Auth Flow
 
-1. `AuthModal.tsx` → `AuthService.login/register` → `POST /api/auth/login` (`auth_routes.py:36`)
-2. bcrypt verify via `auth.verify_password` (`auth.py:19`), JWT created with `sub` = email, 7-day expiry (`auth.py:25-33`)
-3. Token stored in `localStorage['cozy_token']`; attached to all subsequent requests by the axios interceptor
+1. `AuthModal.tsx` → `AuthService.login/register` → `POST /api/auth/login` (`auth_routes.py`)
+2. bcrypt verify via `auth.verify_password` (`backend/auth.py`); JWT created with `sub` = email, 7-day expiry
+3. Token stored in `localStorage['cozy_token']`; attached to all subsequent requests by the axios interceptor; a 401 response clears the token and triggers `setUnauthorizedHandler` → `App.tsx` resets state and reopens the auth modal
 
 **State Management:**
 - Frontend: local `useState` in `App.tsx` (`user`, `tasks`, `analytics`, `activeTab`); children receive props + `onTaskChange`/`onSuccess` callbacks; `AnalyticsDashboard` and `AIAssistant` fetch their own data
@@ -141,88 +150,103 @@ Two-tier web application: a React SPA (Vite + Tailwind) frontend and a FastAPI b
 ## Key Abstractions
 
 **Service objects (frontend):**
-- Purpose: Group related API calls and encapsulate mock fallback per endpoint family
+- Purpose: Group related API calls per domain
 - Examples: `AuthService`, `TaskService`, `AnalyticsService`, `RAGService` — all in `frontend/src/services/api.ts`
-- Pattern: Plain exported objects of async methods; each method wrapped in `try/catch` returning mock data on failure
+- Pattern: Plain exported objects of async methods; each converts errors to typed `ApiError` and throws
 
-**Agent classes (RAG):**
-- Purpose: Represent pipeline stages as isolated units
-- Examples: `RetrievalAgent`, `EvaluatorAgent`, `MultiLLMQueryAgent` — all in `backend/rag_service.py`
-- Pattern: `@staticmethod`-only classes; no instantiation, no internal state; orchestrated by `run_rag_pipeline()`
+**RagService composition root (backend):**
+- Purpose: Lazy-wire embeddings, vector store, memory service, and pipeline; process-wide singleton
+- Example: `RagService` + `get_rag_service()` / `configure_rag_service()` / `reset_rag_service()` in `backend/services/rag/service.py`
+- Pattern: Constructor injection of optional components; lazy property creation on first use so importing never downloads models or opens ChromaDB; tests inject fakes
+
+**VectorStore interface:**
+- Purpose: Abstract persistent, user-scoped vector persistence
+- Example: `VectorStore` ABC with `add`/`update`/`delete`/`search`/`get_by_id`/`list_by_user`/`count`; implementations `ChromaVectorStore` (persistent) and `InMemoryVectorStore` (`backend/services/rag/vector_store.py`)
+- Pattern: Application logic depends only on the interface
+
+**LLMProvider interface:**
+- Purpose: Abstract multi-provider LLM calls
+- Example: `LLMProvider` ABC with `complete(system_prompt, user_prompt)`; `OllamaProvider`, `OpenAIProvider`, `GeminiProvider`, `GrokProvider`, plus `FakeLLMProvider`/`FailingLLMProvider` for tests (`backend/services/rag/providers/`)
+- Pattern: Factory registry `get_provider()`; every provider raises `LLMError` on failure
 
 **Dependency-injected DB session:**
 - Purpose: Provide a request-scoped SQLAlchemy session to route handlers
-- Example: `get_db` in `backend/database.py:17`, consumed as `db: Session = Depends(get_db)`
+- Example: `get_db` in `backend/database.py`, consumed as `db: Session = Depends(get_db)`
 - Pattern: FastAPI generator dependency with `yield`/`finally: db.close()`
 
 **Current-user dependency:**
 - Purpose: Resolve the authenticated user from the Bearer token for every protected route
-- Example: `get_current_user` in `backend/auth.py:35`, consumed as `current_user: models.User = Depends(auth.get_current_user)`
-- Pattern: FastAPI dependency chaining (uses `get_db` internally)
+- Example: `get_current_user` in `backend/auth.py`, consumed as `current_user: models.User = Depends(auth.get_current_user)`
+- Pattern: FastAPI dependency chaining
 
 **Props-interface components (frontend):**
 - Purpose: Type component contracts
-- Example: `interface Props { tasks: Task[]; onTaskChange: () => void; }` in `frontend/src/components/TaskManager.tsx:6-9`
+- Example: `interface Props { tasks: Task[]; onTaskChange: () => void; }` in `frontend/src/components/TaskManager.tsx`
 - Pattern: Local `Props` interface per component; named `export const X: React.FC<Props>`
 
 ## Entry Points
 
 **Backend:**
 - Location: `backend/main.py`
-- Invocation: `uvicorn main:app --reload --port 8000` (dev) or `CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]` (`backend/Dockerfile`)
-- Responsibilities: Create FastAPI app (`title="Cozy AI Productivity & RAG Intelligence System"`, `version="2.0.0"`), register CORS middleware (allow all origins), include 4 routers, `Base.metadata.create_all` on import, seed demo user/tasks/memories on startup, serve `GET /` health/root info
+- Invocation: `uvicorn main:app --reload --port 8000` (dev) or `CMD ["sh", "-c", "alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port 8000"]` (`backend/Dockerfile`)
+- Responsibilities: Create FastAPI app (`APP_NAME`/`APP_VERSION` 2.1.0 from settings), CORS middleware, request-context middleware (`X-Request-Id`, latency logging), include 5 routers, lifespan handler (production: rely on Alembic; dev: `Base.metadata.create_all` + optional demo seed), serve `GET /` root info
+- Also `python start.py` at repo root launches backend + frontend together (used in dev)
 
 **Frontend:**
 - Location: `frontend/src/main.tsx` → `frontend/src/App.tsx`
-- Invocation: `npm run dev` (Vite dev server on port 3000) or `docker-compose up --build`
+- Invocation: `npm run dev` (Vite dev server on port 3000) or `docker compose up --build` (nginx serving `frontend/dist/`)
 - Responsibilities: Mount React app into `#root`; `App.tsx` owns top-level state and tab routing between `tasks` | `analytics` | `assistant`
 
 ## Architectural Constraints
 
-- **Threading:** Backend is single-threaded async-capable FastAPI on uvicorn; SQLite requires `check_same_thread: False` (`backend/database.py:10`). All route handlers are synchronous `def` (FastAPI runs them in a threadpool). RAG HTTP calls to LLM providers are blocking `requests.post` with 5–10s timeouts (`backend/rag_service.py:247, 271, 289, 307`)
-- **Global state:** Module-level singletons in `backend/rag_service.py`: `chroma_client`, `embedding_model`, and the in-memory fallback `in_memory_docs` list (process-wide, non-persistent). `cozy_token` in browser `localStorage` (`frontend/src/services/api.ts:14`) is the client-side session store
-- **Circular imports:** None detected — `main.py` imports modules/routes; routes import `models`, `schemas`, `auth`, `database`, `rag_service`; `auth.py` imports `models` and `database`; no module imports `main.py`
-- **DB access style:** Raw SQLAlchemy Core-style queries (`db.query(Model).filter(...)`) rather than SQLAlchemy 2.0 select() statements; no repository layer; routes contain query logic inline
-- **Two-service deployment:** `docker-compose.yml` defines `backend` (port 8000) and `frontend` (port 3000→80); frontend build uses Vite proxy in dev, nginx static serving in Docker; ChromaDB and SQLite persisted via named host volumes (`docker-compose.yml:15-16`)
-- **Demo data dependency:** The system seeds `demo@cozy.app` / `cozy123` on startup (`backend/main.py:38-47`), and the frontend falls back to a hard-coded mock user when the API is unreachable — the UI assumes a logged-in-like state even without auth
+- **Threading:** FastAPI app on uvicorn; route handlers are synchronous `def` (FastAPI runs them in a threadpool); RAG query route is `async def` and the LLM call is genuinely async (httpx) with `asyncio.wait_for` timeout — no blocking HTTP in the event loop
+- **SQLite:** requires `check_same_thread: False` (`backend/database.py`); SQLite strips tzinfo from `DateTime(timezone=True)` — `_aware()`/`_parse_iso()` helpers re-attach UTC (`backend/routes/analytics_routes.py`, `backend/routes/rag_routes.py`)
+- **Global state:** module-level `_rag_service` singleton (`backend/services/rag/service.py`); browser `cozy_token` in `localStorage` is the client-side session store
+- **Circular imports:** none detected — `main.py` imports routes; routes import `models`, `schemas`, `auth`, `database`, `services.rag.*`; no module imports `main.py`
+- **DB access style:** SQLAlchemy 2.0 `Mapped`/`mapped_column` typed models; queries use `db.query(Model).filter(...)` ORM style; no repository layer
+- **Migrations:** Alembic manages production schema (`backend/alembic/versions/0001_initial.py`); dev uses `create_all` convenience path in the lifespan
+- **Three-service deployment:** `docker-compose.yml` defines `db` (PostgreSQL 16), `backend` (port 8000), `frontend` (port 3000→80); ChromaDB persisted via named volume `chroma_data`
+- **Demo data:** `SEED_DEMO` gates demo seeding and is only honored when `APP_ENV != production` — but `docker-compose.yml` sets `SEED_DEMO=true` (see CONCERNS.md)
 
 ## Anti-Patterns
 
-### Fallback-to-mock Hides Real Errors
+### Silent Vector-Store Degradation
 
-**What happens:** Every method in `frontend/src/services/api.ts` catches ALL exceptions and silently returns mock data (e.g., `api.ts:136-143`, `api.ts:228-251`). A failing backend produces a working-looking UI with fabricated data.
-**Why it's wrong:** Production issues are invisible; users get phantom data (fake tasks, fake analytics); a silent mock path after a real auth failure can mask 401s.
-**Do this instead:** Gate mock fallback behind an explicit flag (e.g., `VITE_USE_MOCK`) or only on network-level errors (`axios.isAxiosError(e) && !e.response`); surface non-network errors to the user.
+**What happens:** If ChromaDB init fails, `ChromaVectorStore` transparently uses an `InMemoryVectorStore` (`backend/services/rag/vector_store.py`) — memories are "stored" but are volatile and lost on restart.
+**Why it's wrong:** Data-loss with no user-visible signal; a long-running degraded deployment silently forgets task history.
+**Do this instead:** Surface store status via health/logs; fail closed with a clear error when persistence is unavailable, or persist the fallback to disk.
 
-### Secret Defaults Committed in Code
+### Best-Effort Memory Persistence
 
-**What happens:** `backend/auth.py:12` hard-codes `JWT_SECRET_KEY` default `"cozy_rag_productivity_tracker_super_secret_key_2026"`, and `docker-compose.yml:12` sets the same value as an environment variable.
-**Why it's wrong:** Anyone with the repo can forge valid JWTs for any user in any deployment that doesn't override the key.
-**Do this instead:** Require `JWT_SECRET_KEY` to be provided via environment in production (fail fast if missing), and remove the default from `docker-compose.yml`.
+**What happens:** `_persist_memory` in `backend/routes/task_routes.py` catches `MemoryIngestionError` and only logs it — the task operation still reports success.
+**Why it's wrong:** Relational DB and vector store can diverge; the AI assistant silently misses events.
+**Do this instead:** Make memory writes transactional with the task write, or expose a consistency indicator/retry mechanism.
 
-### Blocking LLM Calls in Request Path
+### Hardcoded Production Secret in Compose
 
-**What happens:** `MultiLLMQueryAgent.query` (`backend/rag_service.py:220`) performs synchronous HTTP calls (up to 10s timeout) inside the `/api/rag/query` request handler.
-**Why it's wrong:** A slow or down LLM provider stalls the FastAPI worker thread; multiple concurrent queries degrade the whole API.
-**Do this instead:** Run the LLM call in a background task (`BackgroundTasks`) or job queue, and return the answer asynchronously, or shorten timeouts and cache results.
+**What happens:** `docker-compose.yml` sets `JWT_SECRET_KEY=cozy_rag_productivity_tracker_super_secret_key_2026`.
+**Why it's wrong:** Anyone with the repo can forge valid JWTs for any deployment that uses the compose defaults; combined with `SEED_DEMO=true`, the published demo account is a backdoor.
+**Do this instead:** Read the secret from a `.env`/secret store; remove the hardcoded value and the demo seed from the production compose file.
 
 ## Error Handling
 
-**Strategy:** Defensive per-call `try/except` with layered fallbacks.
+**Strategy:** Typed exceptions on the backend; defensive UI handling on the frontend.
 
 **Patterns:**
-- FastAPI `HTTPException` for expected errors: duplicate email → 400 (`auth_routes.py:14-17`), bad credentials → 401 (`auth_routes.py:39-44`), missing task → 404 (`task_routes.py:69, 124, 152`), empty question → 400 (`rag_routes.py:17-18`)
-- RAG pipeline degrades gracefully: ChromaDB import failure → in-memory store (`rag_service.py:43-50`); provider connection failure → next provider → rule-based fallback engine (`rag_service.py:253, 316-317`)
-- Startup seeding wrapped in try/except with rollback (`backend/main.py:129-131`)
-- Frontend: per-service `try/catch` → mock data (see anti-pattern above); console.error used in `AIAssistant.tsx:32`
+- FastAPI `HTTPException` for expected errors: duplicate email → 400 (`auth_routes.py`), bad credentials → 401 with `WWW-Authenticate` (`auth_routes.py`), missing task → 404 (`task_routes.py`), empty question → 400 (`rag_routes.py`)
+- `MemoryIngestionError` for vector-store persistence failures (`backend/services/rag/memory.py`)
+- `LLMError` for provider call failures, with retry/backoff in `_http.py`; pipeline converts failures to a graceful "unavailable" answer with `confidence=0` and `grounded=False`
+- `GroundingValidator` rejects hallucinated citations
+- Frontend: every service method converts errors to `ApiError` (status + detail) and throws; `AuthModal.tsx` and `AIAssistant.tsx` display `error.message`; `App.tsx` catches load failures and resets to empty state
+- Startup seeding wrapped in try/except with rollback (`backend/main.py`)
 
 ## Cross-Cutting Concerns
 
-**Logging:** Python `logging` module — `logger = logging.getLogger("rag_service")` (`rag_service.py:32`); `logger.error`/`logger.info` used in `rag_service.py` for ChromaDB and provider failures; startup seeding failures use `print` (`backend/main.py:131`). No structured logging, no log aggregation.
+**Logging:** stdlib `logging` configured in `backend/main.py` (`LOG_LEVEL` from settings) with named loggers; request-context middleware logs every request with `request_id` and latency. No structured logging / log aggregation.
 
-**Validation:** Pydantic v2 schemas in `backend/schemas.py` (`from_attributes = True` for ORM responses); field constraints like `min_length`/`max_length` on names/passwords/titles; enums for priority/status are NOT enforced — plain `str` fields (e.g., `schemas.py:33-34`), so invalid values flow through to DB.
+**Validation:** Pydantic v2 schemas in `backend/schemas.py`; enums for `Priority`/`Status`/`TaskAction` (strictly validated, so invalid values are rejected at the boundary); `EmailStr` for emails; length/range constraints on fields; `RAGQueryRequest` question capped at 2000 chars.
 
-**Authentication:** JWT (HS256) with bcrypt password hashing (`backend/auth.py`); OAuth2PasswordBearer token scheme with `tokenUrl="/api/auth/login"` (`auth.py:17`); every route except auth endpoints and `/` requires `Depends(auth.get_current_user)`; frontend stores token in `localStorage` and attaches via axios interceptor.
+**Authentication:** JWT (HS256) with bcrypt hashing (`backend/auth.py`); `OAuth2PasswordBearer`; every route except auth/health/root requires `Depends(auth.get_current_user)`; frontend stores token in `localStorage` and injects via axios interceptor; 401 response auto-clears the session.
 
 ---
 

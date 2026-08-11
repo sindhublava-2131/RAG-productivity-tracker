@@ -4,210 +4,144 @@
 
 ## Test Framework
 
-**Current state: No tests exist in this repository.**
+**Backend: pytest (~8.3.0, dev extra in `backend/pyproject.toml`)**
+- Config in `backend/pyproject.toml`: `[tool.pytest.ini_options] testpaths = ["tests"]`, `addopts = "-q"`; `pytest-cov` available as dev extra
+- API tests use `fastapi.testclient.TestClient` against the real router stack with dependency overrides
+- RAG tests run **fully offline** against fakes (`InMemoryVectorStore`, `FakeEmbeddingService`, `FakeLLMProvider`) — no network, no model downloads, no disk writes
+- Run: `cd backend && pytest` (or `python -m pytest`)
 
-- No `*.test.*` / `*.spec.*` files, no `tests/` directory, and no test runner configuration anywhere in the repo.
-- Backend declares `pytest>=7.4.0` in `backend/requirements.txt` (line 11), but no pytest config (`pytest.ini`, `pyproject.toml`, `setup.cfg`) exists and there are no test modules under `backend/`.
-- Frontend `frontend/package.json` has no test script and no test dependencies installed (`package-lock.json` contains no jest, vitest, or @testing-library packages).
+**Frontend: vitest (~1.6.0) + @testing-library/react + jsdom**
+- Config lives in `frontend/vite.config.ts` `test` block: `environment: 'jsdom'`, `globals: true`, `setupFiles: ['./src/test/setup.ts']`, `css: false`
+- Scripts in `frontend/package.json`: `test` (`vitest run`), `test:watch`, `test:coverage`, plus `lint`/`typecheck`/`build`
+- Run: `cd frontend && npm test`
 
-**Recommended framework setup (matches existing stack):**
-
-- **Backend:** `pytest` (already in `backend/requirements.txt`) with `fastapi.testclient.TestClient` for API-level tests. Add a `backend/tests/` directory with `backend/tests/conftest.py` that overrides the `get_db` dependency and creates an isolated SQLite database:
-  ```python
-  # backend/tests/conftest.py
-  import pytest
-  from fastapi.testclient import TestClient
-  from sqlalchemy import create_engine
-  from sqlalchemy.orm import sessionmaker
-  from database import Base, get_db
-  import models
-  import main
-
-  TEST_DB = "sqlite:///./test_cozy.db"
-  engine = create_engine(TEST_DB, connect_args={"check_same_thread": False})
-  TestingSession = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-  def override_get_db():
-      db = TestingSession()
-      try:
-          yield db
-      finally:
-          db.close()
-
-  main.app.dependency_overrides[get_db] = override_get_db
-
-  @pytest.fixture()
-  def client():
-      Base.metadata.create_all(bind=engine)
-      with TestClient(main.app) as c:
-          yield c
-      Base.metadata.drop_all(bind=engine)
-  ```
-- **Frontend:** add `vitest` + `@testing-library/react` + `@testing-library/jest-dom` as devDependencies and a `"test": "vitest"` script. Vitest works with the existing `frontend/vite.config.ts` (add a `test` block to it). No jsdom setup exists yet.
-
-**Run Commands (once configured):**
-```bash
-cd backend; pytest                          # Run all backend tests
-cd backend; pytest tests/test_tasks.py -k complete   # Single test file / keyword
-cd frontend; npm test                      # Run all frontend tests (vitest)
-cd frontend; npm run test -- --coverage    # Frontend coverage
-```
+**CI:** `.github/workflows/ci.yml` runs `ruff`, `mypy`, `pytest` (backend); `eslint`, `tsc --noEmit`, `vitest run`, `build` (frontend); plus a Docker Compose smoke test.
 
 ## Test File Organization
 
-**Current state:** None.
-
-**Recommended layout:**
+**Backend (`backend/tests/`):**
 ```
-backend/
-├── tests/
-│   ├── conftest.py            # TestClient fixture + get_db override (see above)
-│   ├── test_auth.py           # register / login / me
-│   ├── test_tasks.py          # CRUD + complete endpoint
-│   ├── test_analytics.py      # metric computation
-│   └── test_rag.py            # format_task_memory + evaluator (pure functions)
-frontend/
-└── src/
-    ├── App.test.tsx
-    └── components/
-        ├── TaskManager.test.tsx
-        ├── AuthModal.test.tsx
-        └── services/api.test.ts   # mock axios adapter, fallback behavior
+backend/tests/
+├── conftest.py                     # Shared fixtures (client, db_session, fakes, auth)
+├── fixtures/
+│   └── rag/
+│       └── evaluation_dataset.py   # 8-case deterministic RAG benchmark dataset
+├── test_auth.py                    # register / login / me / token edge cases
+├── test_tasks.py                   # CRUD + complete + cross-user isolation
+├── test_analytics.py               # 11 metrics incl. empty-user edge case
+├── test_health.py                  # liveness / readiness / root
+├── test_rag.py                     # pipeline, retrieval, rerank, grounding, benchmark, injection defense
+├── test_security.py                # JWT tampering/expiry, cross-user memory, oversized input, prod secret
+└── __init__.py
 ```
 
-**Naming:** `test_*.py` for Python (pytest discovery default); `*.test.tsx` co-located with the component for frontend (Vitest default glob).
+**Frontend (co-located):**
+```
+frontend/src/services/api.test.ts        # AuthService/TaskService/RAGService with mocked axios
+frontend/src/components/AIAssistant.test.tsx  # render, ask, grounded answer, error state
+frontend/src/test/setup.ts               # jest-dom matchers, cleanup, localStorage reset, mock restore
+```
+
+**Naming:** `test_*.py` (pytest discovery), `*.test.ts(x)` co-located (vitest glob).
 
 ## Test Structure
 
-**No existing suites to model from.** Follow these patterns aligned with the codebase:
-
-**Backend — API tests exercise the real router stack:**
+**Backend — API tests exercise the real router stack via the `client` fixture:**
 ```python
 # backend/tests/test_auth.py
-def test_register_and_login(client):
-    res = client.post("/api/auth/register", json={
-        "name": "Test User", "email": "t@example.com", "password": "secret1"
-    })
-    assert res.status_code == 200
-    token = res.json()["access_token"]
-    assert token
-
-    res = client.post("/api/auth/login", json={
-        "email": "t@example.com", "password": "secret1"
-    })
-    assert res.status_code == 200
-
-def test_duplicate_email_returns_400(client):
-    payload = {"name": "A", "email": "dup@example.com", "password": "secret1"}
-    assert client.post("/api/auth/register", json=payload).status_code == 200
-    assert client.post("/api/auth/register", json=payload).status_code == 400
+def test_register_user(client):
+    payload = {"name": "New User", "email": "newuser@example.com", "password": "strongpassword123"}
+    response = client.post("/api/auth/register", json=payload)
+    assert response.status_code == 201
+    data = response.json()
+    assert "access_token" in data
+    assert data["user"]["email"] == "newuser@example.com"
 ```
 
-**Backend — pure-function tests for the RAG service** (`backend/rag_service.py` needs no DB or network):
+**Backend — pure/unit tests for RAG components with fakes (no DB/network):**
 ```python
 # backend/tests/test_rag.py
-from rag_service import format_task_memory, EvaluatorAgent
-
-def test_format_task_memory_complete():
-    text = format_task_memory("COMPLETE", {
-        "title": "DB Lab", "priority": "HIGH",
-        "estimated_minutes": 60, "actual_minutes": 45, "due_date": None
-    })
-    assert "Completed 'DB Lab'" in text
-    assert "15 minutes faster" in text
-
-def test_evaluator_filters_low_relevance():
-    mems = [{"relevance_score": 0.05}, {"relevance_score": 0.9}]
-    valid, score = EvaluatorAgent.evaluate("q", mems)
-    assert valid[0]["relevance_score"] == 0.9
+def test_metadata_filtering(fake_vector_store, fake_embeddings):
+    retriever = HybridRetriever(fake_vector_store, fake_embeddings, top_k=5)
+    # ...seed records, filter by action=COMPLETE, assert only the matching one returns
 ```
+
+**Backend — async pipeline tests** use `pytest.mark.asyncio` (e.g., `test_empty_retrieval_and_insufficient_context`, `test_llm_failure`).
 
 **Frontend — component render + interaction with @testing-library/react:**
 ```tsx
-// frontend/src/components/TaskManager.test.tsx
-import { render, screen, fireEvent } from '@testing-library/react';
-import { TaskManager } from './TaskManager';
-
-test('renders task title', () => {
-  render(<TaskManager tasks={[]} onTaskChange={() => {}} />);
-  expect(screen.getByText(/No tasks found/i)).toBeInTheDocument();
-});
+// frontend/src/components/AIAssistant.test.tsx
+vi.mock('../services/api', () => ({ RAGService: { queryAssistant: vi.fn(), getMemories: vi.fn() } }));
+// render, type into the input, fire Enter, waitFor grounded answer, assert chips/sources
 ```
 
 **Patterns:**
-- Backend: use the `client` fixture; assert `status_code` then payload shape against the Pydantic response fields (`backend/schemas.py`).
-- Protected endpoints (everything except `POST /api/auth/register` and `POST /api/auth/login`) require `Authorization: Bearer <token>` — register/login first in the test, or use a helper that reuses the token.
-- Frontend: mock `frontend/src/services/api.ts` service objects with `vi.mock()` so components render in isolation.
+- Backend: assert `status_code`, then payload shape against Pydantic response fields (`backend/schemas.py`).
+- Protected endpoints require `Authorization: Bearer <token>` — use the `auth_headers` fixture.
+- Frontend: `vi.mock('../services/api')` isolates components; `waitFor`/`findBy*` for async state updates.
+- Async RAG tests assert `grounded`/`confidence`/`answer` contract plus system-prompt injection-defense invariant (`_GROUNDED_SYSTEM_PROMPT` contains "UNTRUSTED reference data").
 
 ## Mocking
 
-**Framework:** None installed. Use `pytest` fixtures/monkeypatch on the backend; `vi.mock` + `vi.fn` (Vitest) on the frontend.
+**Backend:**
+- `backend/tests/conftest.py` overrides `get_db` on `main.app` (`app.dependency_overrides[get_db] = ...`) with an in-memory SQLite engine (`StaticPool`, `check_same_thread: False`), creating/dropping schema per test.
+- RAG fakes are first-class: `fake_vector_store` (`InMemoryVectorStore`), `fake_embeddings` (`FakeEmbeddingService`, deterministic 8-dim vectors), `fake_llm_provider` (`FakeLLMProvider` / `FailingLLMProvider`).
+- The **autouse** `rag_service` fixture builds a `RagPipeline` + `RagService` from fakes and installs it via `configure_rag_service(service)`, resetting via `reset_rag_service()` after each test — so route-level tests hit the fake pipeline, never ChromaDB or real LLMs.
+- Security tests validate real `auth` module behavior (JWT signing/expiry/tampering) against the PyJWT/bcrypt implementation.
+- `test_production_requires_jwt_secret` constructs `Settings(APP_ENV="production", JWT_SECRET_KEY="")` directly to assert the fail-fast validator.
 
-**Patterns:**
-- Backend: the `get_db` dependency override in `backend/tests/conftest.py` (shown above) is the standard FastAPI mocking point — `main.app.dependency_overrides[get_db] = override_get_db`.
-- `backend/rag_service.py` guards ChromaDB/SentenceTransformers behind a `try/except` at import (lines 35–47) and sets `CHROMA_AVAILABLE = False` with an `in_memory_docs` fallback (lines 49–50). Tests that must not touch ChromaDB or the network should force the fallback path (e.g., `monkeypatch.setattr(rag_service, "CHROMA_AVAILABLE", False)`). LLM provider calls in `MultiLLMQueryAgent.query` (`backend/rag_service.py:241-314`) hit real HTTP endpoints — always mock `requests.post` or force the `_generate_smart_fallback` path.
-- Frontend: mock the axios layer or the service objects. `frontend/src/services/api.ts` already returns mock data on request failure — a test can trigger fallback by having the mocked axios reject, or better, use `vi.mock('../services/api')` to stub service methods directly:
-  ```tsx
-  vi.mock('../services/api', () => ({
-    TaskService: { getTasks: vi.fn().mockResolvedValue([]), /* ... */ },
-  }));
-  ```
+**Frontend:**
+- `frontend/src/services/api.test.ts` mocks the `axios` module with `vi.mock` (mock instance with `get/post/put/patch/delete` + interceptors), then asserts token storage, error → `ApiError` conversion, and provider payloads.
+- `frontend/src/components/AIAssistant.test.tsx` mocks `../services/api` service objects directly with `vi.fn()`.
+- `frontend/src/test/setup.ts` runs `cleanup()`, `localStorage.clear()`, and `vi.restoreAllMocks()` after each test.
 
-**What to Mock:**
-- All external LLM providers (Ollama, OpenAI, Gemini, Grok) and ChromaDB persistence.
-- `datetime.utcnow()`-dependent logic (`backend/main.py` seeding, `backend/routes/task_routes.py` `completed_at`) — freeze time with `monkeypatch` or `freezegun`.
-- Frontend axios instance and browser `localStorage` (`cozy_token` key in `frontend/src/services/api.ts`).
-
-**What NOT to Mock:**
-- Pydantic schema validation and FastAPI route wiring (they are the code under test).
-- `format_task_memory`, `EvaluatorAgent.evaluate`, analytics math in `backend/routes/analytics_routes.py` — these are pure and should run for real.
-- React component rendering — use testing-library queries rather than shallow-render mocks.
+**What to Mock:** All external LLM providers, ChromaDB persistence, embedding model downloads, the axios HTTP layer.
+**What NOT to Mock:** Pydantic schema validation, FastAPI route wiring, `format_task_memory`, reranker/grounding math, analytics metric computation, JWT/bcrypt crypto.
 
 ## Fixtures and Factories
 
-**Test Data:** None exists. The backend has a built-in demo seed in `backend/main.py` (lines 34–133) creating user `demo@cozy.app` and 5 tasks — do not depend on it in tests; create isolated data per test via the API or the SQLAlchemy session.
+**`backend/tests/conftest.py` provides:**
+- `db_engine` — in-memory SQLite engine (StaticPool); `db_session` — sessionmaker-backed session
+- `fake_vector_store`, `fake_embeddings`, `fake_llm_provider` — RAG fakes
+- `rag_service` (autouse) — installs the fake-backed `RagService` singleton
+- `client` — `TestClient` with `get_db` overridden to `db_session`
+- `test_user` + `user_token` + `auth_headers` — seeded user and bearer header
+- `second_user` + `second_user_headers` — second tenant for cross-user isolation tests
 
-**Recommended fixture:**
-```python
-@pytest.fixture()
-def auth_headers(client):
-    client.post("/api/auth/register", json={"name": "U", "email": "u@x.com", "password": "secret1"})
-    token = client.post("/api/auth/login", json={"email": "u@x.com", "password": "secret1"}).json()["access_token"]
-    return {"Authorization": f"Bearer {token}"}
-```
+**Test data:** `backend/tests/fixtures/rag/evaluation_dataset.py` — 8 benchmark cases (`EVALUATION_DATASET`) covering exact lookup, semantic lookup, recency, completed-task lookup, irrelevant filtering, multiple-relevant, empty history, and ambiguous queries, each with `min_precision`/`min_recall` thresholds. `test_rag_evaluation_dataset_benchmark` runs them and asserts aggregate `avg_precision >= 0.7`, `avg_recall >= 0.8`.
 
-**Location:** `backend/tests/conftest.py`; frontend test data inline per test or in `frontend/src/test/fixtures.ts`.
+**Do NOT depend on the dev demo seed** (`SEED_DEMO` in `backend/main.py`) in tests — create isolated data via the API or the SQLAlchemy session.
 
 ## Coverage
 
-**Requirements:** None enforced — no coverage tooling or CI gate exists.
-
-**View Coverage (once vitest/pytest-cov added):**
-```bash
-cd backend; pip install pytest-cov; pytest --cov=. --cov-report=term-missing
-cd frontend; npm run test -- --coverage
-```
+- `pytest-cov` is a dev extra; `npm run test:coverage` exists on the frontend.
+- No hard coverage gate in CI today.
+- View coverage: `cd backend && pytest --cov=. --cov-report=term-missing` and `cd frontend && npm run test:coverage`.
 
 ## Test Types
 
-**Unit Tests:** Not used yet. Highest-value targets are the pure functions: `format_task_memory`, `EvaluatorAgent.evaluate`, `RetrievalAgent.retrieve` fallback path (`backend/rag_service.py`), and `auth.get_password_hash`/`verify_password`/`create_access_token` (`backend/auth.py`).
+**Unit Tests:** `test_rag.py` pure-component tests (retrieval, reranking, context dedup/limit, grounding validation), `test_security.py` crypto/validator tests.
 
-**Integration Tests:** Not used yet. Use FastAPI `TestClient` against the real routers + SQLite to cover the full request path: auth → create task → complete task → analytics. The `get_db` override in `conftest.py` makes this isolated from the dev database `cozy_productivity.db` (created via `DATABASE_URL` default in `backend/database.py:7`).
+**Integration Tests:** API-level suites via `client` — auth flows (`test_auth.py`), task CRUD + completion + cross-user 404s (`test_tasks.py`), analytics metrics with seeded rows (`test_analytics.py`), health endpoints (`test_health.py`), RAG endpoints with fake pipeline (`test_security.py` cross-user memory access, `test_rag.py` benchmark).
 
-**E2E Tests:** Not used. No Playwright/Cypress dependency exists. If added, cover the Vite dev proxy (`frontend/vite.config.ts` `/api` → `localhost:8000`) and the docker-compose deployment.
+**E2E Tests:** Not present as a dedicated suite. CI `docker-smoke-test` job covers deployment-level verification (compose up, `/health/ready` polling, register → create task → complete → RAG query via curl).
 
 ## Common Patterns
 
-**Async Testing:** Not applicable to backend — all route handlers are synchronous `def` (FastAPI runs them in a threadpool); call them synchronously through `TestClient`. Frontend tests should use `await screen.findBy*` for state updates after `handleAsk`/`fetchAnalytics` promises resolve (e.g., `AIAssistant.tsx` loading→response transition).
+**Async Testing:** RAG pipeline tests use `pytest.mark.asyncio` (asyncio mode is available since the app is `async def` for the RAG query route). All other route handlers are sync `def` and are tested synchronously via `TestClient`. Frontend tests use `await waitFor(...)` / `findBy*` for post-promise UI updates.
 
 **Error Testing:**
 ```python
-def test_delete_missing_task_returns_404(client, auth_headers):
-    res = client.delete("/api/tasks/9999", headers=auth_headers)
-    assert res.status_code == 404
-    assert res.json()["detail"] == "Task not found"
+# backend/tests/test_security.py
+def test_missing_jwt(client):
+    response = client.get("/api/tasks")
+    assert response.status_code == 401
+
+def test_cross_user_memory_access(client, auth_headers, second_user_headers, rag_service):
+    # user 1 stores a memory; user 2 cannot list or delete it (404)
 ```
-The `"Task not found"` detail is repeated in `backend/routes/task_routes.py` (lines 69, 124, 152) — assert on it as the contract.
+
+**Known gaps (see CONCERNS.md):** no frontend tests for `TaskManager.tsx`, `AuthModal.tsx`, `AnalyticsDashboard.tsx`, or `CuteHeader.tsx`; no coverage gate; no E2E (Playwright/Cypress) suite.
 
 ---
 
