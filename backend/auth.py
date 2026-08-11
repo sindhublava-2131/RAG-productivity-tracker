@@ -61,7 +61,7 @@ def is_token_revoked(db: Session, jti: str) -> bool:
     )
 
 
-def revoke_token(db: Session, token: str) -> bool:
+def revoke_token(db: Session, token: str, user_id: int) -> bool:
     """Blacklist a token by its jti so it can no longer authenticate.
 
     Returns True when the token was actually revoked, False when it was
@@ -87,7 +87,7 @@ def revoke_token(db: Session, token: str) -> bool:
     db.add(
         TokenBlacklist(
             jti=jti,
-            user_id=int(payload.get("sub", 0)) if str(payload.get("sub", "")).isdigit() else 0,
+            user_id=user_id,
             expires_at=expires_at,
         )
     )

@@ -73,10 +73,11 @@ export const AuthModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) => {
         <form onSubmit={handleSubmit} className="space-y-4">
           {!isLogin && (
             <div>
-              <label className="block text-xs font-semibold text-[#4A3E3D] mb-1">Your Name</label>
+              <label htmlFor="auth-name" className="block text-xs font-semibold text-[#4A3E3D] mb-1">Your Name</label>
               <div className="relative">
                 <UserIcon className="w-4 h-4 text-[#9CA3AF] absolute left-3.5 top-3.5" />
                 <input
+                  id="auth-name"
                   type="text"
                   required
                   placeholder="e.g. Cozy Buddy 🌸"
@@ -89,10 +90,11 @@ export const AuthModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) => {
           )}
 
           <div>
-            <label className="block text-xs font-semibold text-[#4A3E3D] mb-1">Email Address</label>
+            <label htmlFor="auth-email" className="block text-xs font-semibold text-[#4A3E3D] mb-1">Email Address</label>
             <div className="relative">
               <Mail className="w-4 h-4 text-[#9CA3AF] absolute left-3.5 top-3.5" />
               <input
+                id="auth-email"
                 type="email"
                 required
                 placeholder="demo@cozy.app"
@@ -104,10 +106,11 @@ export const AuthModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) => {
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-[#4A3E3D] mb-1">Password</label>
+            <label htmlFor="auth-password" className="block text-xs font-semibold text-[#4A3E3D] mb-1">Password</label>
             <div className="relative">
               <Lock className="w-4 h-4 text-[#9CA3AF] absolute left-3.5 top-3.5" />
               <input
+                id="auth-password"
                 type="password"
                 required
                 placeholder="••••••••"

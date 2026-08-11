@@ -304,8 +304,9 @@ export const TaskManager: React.FC<Props> = ({ tasks, onTaskChange }) => {
               </button>
             </div>
 
-            <label className="block text-xs font-semibold text-[#4A3E3D] mb-1">Actual minutes spent</label>
+            <label htmlFor="complete-minutes" className="block text-xs font-semibold text-[#4A3E3D] mb-1">Actual minutes spent</label>
             <input
+              id="complete-minutes"
               type="number"
               min="0"
               value={completeMinutes}
