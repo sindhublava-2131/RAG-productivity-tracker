@@ -12,15 +12,13 @@ from fastapi.middleware.cors import CORSMiddleware
 import auth
 import models
 from core.config import settings
+from core.logging import configure_logging
 from database import Base, SessionLocal, engine
 from routes import analytics_routes, auth_routes, health_routes, rag_routes, task_routes
 from services.rag.memory import MemoryIngestionError, format_task_memory
 from services.rag.service import get_rag_service
 
-logging.basicConfig(
-    level=getattr(logging, settings.LOG_LEVEL.upper(), logging.INFO),
-    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
-)
+configure_logging()
 logger = logging.getLogger("cozy.main")
 
 
@@ -96,13 +94,15 @@ def _seed_demo_data() -> None:
             },
         ]
 
-        rag = get_rag_service()
-        for t_data in seed_tasks:
-            t = models.Task(user_id=user.id, **t_data)
-            db.add(t)
-            db.commit()
+        # Batch-insert all tasks in a single commit (avoids per-row commits).
+        tasks = [models.Task(user_id=user.id, **t_data) for t_data in seed_tasks]
+        db.add_all(tasks)
+        db.commit()
+        for t in tasks:
             db.refresh(t)
 
+        rag = get_rag_service()
+        for t in tasks:
             action = "COMPLETE" if t.status == "COMPLETED" else "CREATE"
             mem_text = format_task_memory(
                 action,
