@@ -6,6 +6,8 @@ backend/__pycache__/
 backend/*/__pycache__/
 backend/*/*/__pycache__/
 *.pyc
+*.egg-info/
+*.egg
 
 # Database & Vector DB
 *.db
