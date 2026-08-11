@@ -24,7 +24,7 @@ jobs:
       - name: Install backend dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r backend/requirements.txt pytest ruff mypy
+          pip install -r backend/requirements.txt pytest ruff mypy pytest-asyncio pytest-cov
 
       - name: Backend Lint (Ruff)
         run: |
@@ -39,7 +39,7 @@ jobs:
       - name: Backend Offline Unit & RAG Tests
         run: |
           cd backend
-          pytest
+          pytest --cov=. --cov-report=term-missing --cov-fail-under=70
 
   frontend-ci:
     name: Frontend CI (Lint, Typecheck, Test, Build)
@@ -84,6 +84,8 @@ jobs:
     name: Docker Build & Compose Smoke Test
     needs: [backend-ci, frontend-ci]
     runs-on: ubuntu-latest
+    env:
+      JWT_SECRET_KEY: ci-smoke-test-secret-not-for-production-2026
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -135,10 +137,10 @@ jobs:
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer $TOKEN" \
             -d '{"title":"CI Pipeline Integration Task","priority":"HIGH","estimated_minutes":30}')
-          TASK_ID=$(echo "$TASK_RES" | grep -o '"id":' | head -n1)
+          TASK_ID=$(echo "$TASK_RES" | sed -n 's/.*"id":\([0-9]*\).*/\1/p' | head -n1)
 
           echo -e "\n=== 5. Complete Task ==="
-          curl -s -X PUT "http://localhost:8000/api/tasks/1/complete?actual_minutes=25" \
+          curl -s -X PUT "http://localhost:8000/api/tasks/${TASK_ID}/complete?actual_minutes=25" \
             -H "Authorization: Bearer $TOKEN"
 
           echo -e "\n=== 6. RAG Query ==="
