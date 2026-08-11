@@ -19,18 +19,22 @@ async def post_json(
     *,
     payload: dict[str, Any],
     headers: dict[str, str] | None = None,
-    timeout: float | None = None,
+    timeout_seconds: float | None = None,
     max_retries: int | None = None,
 ) -> httpx.Response:
     """POST JSON with bounded timeout/retries, raising LLMError on failure."""
-    timeout = timeout if timeout is not None else settings.LLM_TIMEOUT_SECONDS
+    timeout_seconds = (
+        timeout_seconds
+        if timeout_seconds is not None
+        else settings.LLM_TIMEOUT_SECONDS
+    )
     max_retries = max_retries if max_retries is not None else settings.LLM_MAX_RETRIES
     attempts = max_retries + 1
     last_exc: Exception | None = None
 
     for attempt in range(attempts):
         try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
+            async with httpx.AsyncClient(timeout=timeout_seconds) as client:
                 resp = await client.post(url, json=payload, headers=headers or {})
             return resp
         except (httpx.TimeoutException, httpx.ConnectError, httpx.ReadError) as exc:

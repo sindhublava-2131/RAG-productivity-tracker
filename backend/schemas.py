@@ -1,28 +1,28 @@
 from __future__ import annotations
 
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
 # --- Enums ---
-class Priority(str, Enum):
+class Priority(StrEnum):
     LOW = "LOW"
     MEDIUM = "MEDIUM"
     HIGH = "HIGH"
     URGENT = "URGENT"
 
 
-class Status(str, Enum):
+class Status(StrEnum):
     PENDING = "PENDING"
     IN_PROGRESS = "IN_PROGRESS"
     COMPLETED = "COMPLETED"
     OVERDUE = "OVERDUE"
 
 
-class TaskAction(str, Enum):
+class TaskAction(StrEnum):
     CREATE = "CREATE"
     UPDATE = "UPDATE"
     COMPLETE = "COMPLETE"
