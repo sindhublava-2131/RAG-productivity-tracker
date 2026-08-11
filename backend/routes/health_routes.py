@@ -32,6 +32,18 @@ def readiness(response: Response):
         checks["database"] = f"error: {exc}"
         ready = False
 
+    # Report the vector store backend so silent in-memory degradation is visible.
+    try:
+        from services.rag.service import get_rag_service
+
+        rag = get_rag_service()
+        checks["rag_vector_store"] = rag.vector_store.mode
+        if rag.vector_store.mode == "in-memory-fallback":
+            ready = False
+    except Exception as exc:  # pragma: no cover - defensive
+        checks["rag_vector_store"] = f"error: {exc}"
+        ready = False
+
     if not ready:
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
         return schemas.ReadinessResponse(status="not_ready", checks=checks)
