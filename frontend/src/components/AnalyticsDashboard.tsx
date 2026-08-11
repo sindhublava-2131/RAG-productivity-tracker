@@ -1,32 +1,31 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { AnalyticsData } from '../types';
-import { AnalyticsService } from '../services/api';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, AreaChart, Area
 } from 'recharts';
-import { Flame, CheckCircle, Clock, Calendar, AlertTriangle, TrendingUp, Award, Zap } from 'lucide-react';
+import { Flame, CheckCircle, Clock, Calendar, AlertTriangle, TrendingUp, Award, Zap, RefreshCw } from 'lucide-react';
 
-export const AnalyticsDashboard: React.FC = () => {
-  const [data, setData] = useState<AnalyticsData | null>(null);
-  const [loading, setLoading] = useState(true);
+interface Props {
+  analytics: AnalyticsData | null;
+  onRefresh: () => void;
+}
 
-  useEffect(() => {
-    fetchAnalytics();
-  }, []);
+export const AnalyticsDashboard: React.FC<Props> = ({ analytics, onRefresh }) => {
+  const data = analytics;
 
-  const fetchAnalytics = async () => {
-    setLoading(true);
-    const res = await AnalyticsService.getAnalytics();
-    setData(res);
-    setLoading(false);
-  };
-
-  if (loading || !data) {
+  if (!data) {
     return (
-      <div className="text-center py-16">
-        <div className="w-12 h-12 border-4 border-[#FFDFE5] border-t-[#FF8DA1] rounded-full animate-spin mx-auto mb-3"></div>
-        <p className="text-xs text-[#9CA3AF]">Calculating cozy productivity analytics...</p>
+      <div className="text-center py-16 bg-white rounded-4xl border border-dashed border-[#FFDFE5]">
+        <span className="text-4xl">📊</span>
+        <p className="text-sm font-semibold text-[#4A3E3D] mt-2">No analytics available yet.</p>
+        <p className="text-xs text-[#9CA3AF] mb-4">Create and complete tasks to see your productivity insights.</p>
+        <button
+          onClick={onRefresh}
+          className="inline-flex items-center gap-1.5 bg-[#FF8DA1] hover:bg-[#ff7b92] text-white text-xs font-bold px-4 py-2 rounded-full shadow-cozy transition-all"
+        >
+          <RefreshCw className="w-3.5 h-3.5" /> Refresh
+        </button>
       </div>
     );
   }
@@ -49,7 +48,7 @@ export const AnalyticsDashboard: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      
+
       {/* Overview Metric Banner */}
       <div className="bg-gradient-to-r from-[#FFF8F3] via-[#FEF3C7] to-[#FFDFE5] p-6 rounded-4xl border border-[#FFDFE5] shadow-soft">
         <div className="flex flex-col md:flex-row items-center justify-between gap-4">
@@ -62,6 +61,13 @@ export const AnalyticsDashboard: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-3">
+            <button
+              onClick={onRefresh}
+              title="Refresh analytics"
+              className="p-2.5 bg-white rounded-full border border-[#FFDFE5] shadow-soft text-[#FF8DA1] hover:text-[#ff7b92] transition-all"
+            >
+              <RefreshCw className="w-4 h-4" />
+            </button>
             <div className="bg-white p-4 rounded-3xl border border-[#FFDFE5] shadow-soft text-center">
               <span className="text-xs text-[#9CA3AF] block font-medium">Monthly Progress</span>
               <span className="text-2xl font-bold text-[#10B981]">{data.monthly_progress_pct}%</span>
@@ -133,7 +139,7 @@ export const AnalyticsDashboard: React.FC = () => {
 
       {/* Visual Charts Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        
+
         {/* Chart 1: Completion by Weekday (Bar Chart) */}
         <div className="bg-white p-6 rounded-4xl border border-[#FFDFE5] shadow-soft">
           <h3 className="text-base font-bold text-[#4A3E3D] mb-1 flex items-center gap-2">
