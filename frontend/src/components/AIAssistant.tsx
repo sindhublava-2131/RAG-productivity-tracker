@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { RAGResponse, MemoryRecord } from '../types';
 import { RAGService } from '../services/api';
+import { formatUtcDateTime } from '../utils/dates';
 import { Send, Sparkles, Cpu, ShieldCheck, Database, RefreshCw, AlertTriangle } from 'lucide-react';
 
 export const AIAssistant: React.FC = () => {
@@ -201,7 +202,7 @@ export const AIAssistant: React.FC = () => {
                         <p className="text-[#4A3E3D] font-medium leading-tight">{s.content}</p>
                         <span className="text-[9px] text-[#9CA3AF] block mt-1 font-mono">
                           {s.id}
-                          {s.created_at ? ` · ${new Date(s.created_at).toLocaleString()}` : ''}
+                          {s.created_at ? ` · ${formatUtcDateTime(s.created_at)}` : ''}
                         </span>
                       </div>
                     ))}
@@ -255,7 +256,7 @@ export const AIAssistant: React.FC = () => {
                     </div>
                     <p className="text-[#4A3E3D] font-medium leading-tight">{m.content}</p>
                     <span className="text-[9px] text-[#9CA3AF] block mt-1">
-                      {new Date(m.created_at).toLocaleString()}
+                      {formatUtcDateTime(m.created_at)}
                     </span>
                   </div>
                 ))
