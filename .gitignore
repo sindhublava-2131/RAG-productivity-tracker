@@ -1,7 +1,10 @@
 # Dependencies
 node_modules/
 backend/venv/
+__pycache__/
 backend/__pycache__/
+backend/*/__pycache__/
+backend/*/*/__pycache__/
 *.pyc
 
 # Database & Vector DB
@@ -12,6 +15,13 @@ backend/chroma_db/
 # Build Outputs
 frontend/dist/
 frontend/build/
+
+# Testing & Caches
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
 
 # Environment & IDE
 .env

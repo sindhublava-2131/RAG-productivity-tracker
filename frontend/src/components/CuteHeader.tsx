@@ -15,7 +15,7 @@ interface Props {
 export const CuteHeader: React.FC<Props> = ({
   user,
   streakDays,
-  completedToday,
+  completedToday: _completedToday,
   activeTab,
   setActiveTab,
   onOpenAuth,

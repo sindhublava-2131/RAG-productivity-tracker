@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Task, PriorityType, StatusType } from '../types';
 import { TaskService } from '../services/api';
-import { Plus, Check, Clock, Calendar, Trash2, Edit3, AlertCircle, Filter, Search, Tag } from 'lucide-react';
+import { Plus, Check, Clock, Calendar, Trash2, Edit3, Search } from 'lucide-react';
 
 interface Props {
   tasks: Task[];

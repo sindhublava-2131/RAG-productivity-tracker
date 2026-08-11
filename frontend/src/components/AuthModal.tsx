@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { AuthService } from '../services/api';
 import { User } from '../types';
-import { X, Heart, Lock, Mail, User as UserIcon } from 'lucide-react';
+import { X, Lock, Mail, User as UserIcon } from 'lucide-react';
 
 interface Props {
   isOpen: boolean;
@@ -33,8 +33,10 @@ export const AuthModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) => {
         onSuccess(res.user);
       }
       onClose();
-    } catch (err: any) {
-      setError(err.response?.data?.detail || 'Authentication failed. Try demo credentials!');
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : 'Authentication failed. Please try again.';
+      setError(message);
     } finally {
       setLoading(false);
     }

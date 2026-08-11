@@ -1,22 +1,45 @@
-import os
+from __future__ import annotations
+
+from collections.abc import Generator
+from datetime import UTC, datetime
+
 from sqlalchemy import create_engine
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
-# Default SQLite database for fast local dev & zero-config setup, supports PostgreSQL via env
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./cozy_productivity.db")
+from core.config import settings
 
-# Adjust connect_args for SQLite
-connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
 
-engine = create_engine(DATABASE_URL, connect_args=connect_args)
+def _utcnow() -> datetime:
+    """Return the current time as a timezone-aware UTC datetime."""
+    return datetime.now(UTC)
+
+
+def build_engine_url() -> str:
+    url = settings.DATABASE_URL
+    return url
+
+
+def _connect_args_for(url: str) -> dict:
+    if url.startswith("sqlite"):
+        return {"check_same_thread": False}
+    return {}
+
+
+engine = create_engine(build_engine_url(), connect_args=_connect_args_for(build_engine_url()))
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-Base = declarative_base()
 
-def get_db():
+class Base(DeclarativeBase):
+    pass
+
+
+def get_db() -> Generator[Session, None, None]:
     db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
+
+
+__all__ = ["engine", "SessionLocal", "Base", "get_db", "_utcnow"]

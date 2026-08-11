@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { User, Task, AnalyticsData } from './types';
-import { AuthService, TaskService, AnalyticsService } from './services/api';
+import { AuthService, TaskService, AnalyticsService, setUnauthorizedHandler } from './services/api';
 import { CuteHeader } from './components/CuteHeader';
 import { AuthModal } from './components/AuthModal';
 import { TaskManager } from './components/TaskManager';
 import { AnalyticsDashboard } from './components/AnalyticsDashboard';
 import { AIAssistant } from './components/AIAssistant';
-import { Heart, Sparkles, Database, ShieldCheck, Cpu } from 'lucide-react';
+import { Heart } from 'lucide-react';
 
 export const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
@@ -16,26 +16,48 @@ export const App: React.FC = () => {
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
 
   useEffect(() => {
-    initApp();
+    setUnauthorizedHandler(() => {
+      setUser(null);
+      setTasks([]);
+      setAnalytics(null);
+      setIsAuthOpen(true);
+    });
+    const token = localStorage.getItem('cozy_token');
+    if (token) {
+      AuthService.getCurrentUser()
+        .then((u) => {
+          setUser(u);
+          return reloadData(u);
+        })
+        .catch(() => {
+          setUser(null);
+          setIsAuthOpen(true);
+        });
+    } else {
+      setIsAuthOpen(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const initApp = async () => {
-    const u = await AuthService.getCurrentUser();
-    setUser(u);
-    await reloadData();
-  };
-
-  const reloadData = async () => {
-    const taskList = await TaskService.getTasks();
-    setTasks(taskList);
-    const stats = await AnalyticsService.getAnalytics();
-    setAnalytics(stats);
+  const reloadData = async (forUser?: User) => {
+    const uid = forUser ?? user;
+    if (!uid) return;
+    try {
+      const taskList = await TaskService.getTasks();
+      setTasks(taskList);
+      const stats = await AnalyticsService.getAnalytics();
+      setAnalytics(stats);
+    } catch {
+      setTasks([]);
+      setAnalytics(null);
+    }
   };
 
   const handleLogout = () => {
     AuthService.logout();
     setUser(null);
-    reloadData();
+    setTasks([]);
+    setAnalytics(null);
   };
 
   return (

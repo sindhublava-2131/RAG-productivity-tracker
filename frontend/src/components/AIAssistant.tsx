@@ -1,22 +1,27 @@
 import React, { useState, useEffect } from 'react';
-import { RAGResponse, MemoryItem } from '../types';
+import { RAGResponse, MemoryRecord } from '../types';
 import { RAGService } from '../services/api';
-import { Send, Bot, Sparkles, Brain, Cpu, ShieldCheck, Database, Layers, RefreshCw } from 'lucide-react';
+import { Send, Sparkles, Cpu, ShieldCheck, Database, RefreshCw, AlertTriangle } from 'lucide-react';
 
 export const AIAssistant: React.FC = () => {
   const [question, setQuestion] = useState('');
   const [provider, setProvider] = useState('ollama');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [response, setResponse] = useState<RAGResponse | null>(null);
-  const [memories, setMemories] = useState<MemoryItem[]>([]);
+  const [memories, setMemories] = useState<MemoryRecord[]>([]);
 
   useEffect(() => {
     fetchMemories();
   }, []);
 
   const fetchMemories = async () => {
-    const list = await RAGService.getMemories();
-    setMemories(list);
+    try {
+      const list = await RAGService.getMemories();
+      setMemories(list.items);
+    } catch (e) {
+      setMemories([]);
+    }
   };
 
   const handleAsk = async (qText?: string) => {
@@ -25,11 +30,13 @@ export const AIAssistant: React.FC = () => {
 
     setLoading(true);
     setResponse(null);
+    setError(null);
     try {
       const res = await RAGService.queryAssistant(query, provider);
       setResponse(res);
     } catch (e) {
       console.error(e);
+      setError(e instanceof Error ? e.message : 'Failed to query the assistant.');
     } finally {
       setLoading(false);
     }
@@ -141,13 +148,14 @@ export const AIAssistant: React.FC = () => {
                   </div>
                   <div>
                     <h3 className="text-sm font-bold text-[#4A3E3D]">AI Assistant Answer</h3>
-                    <span className="text-[10px] text-[#9CA3AF]">{response.query_agent}</span>
+                    <span className="text-[10px] text-[#9CA3AF]">{response.provider} · {response.model}</span>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] bg-[#D1FAE5] text-[#10B981] font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1">
-                    <ShieldCheck className="w-3 h-3" /> Relevancy: {Math.round(response.evaluator_score * 100)}%
+                  <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1 ${response.grounded ? 'bg-[#D1FAE5] text-[#10B981]' : 'bg-[#FEF3C7] text-[#D97706]'}`}>
+                    {response.grounded ? <ShieldCheck className="w-3 h-3" /> : <AlertTriangle className="w-3 h-3" />}
+                    {response.grounded ? 'Grounded' : 'Not grounded'}
                   </span>
                   <span className="text-[10px] bg-[#FAF6F0] text-[#9CA3AF] px-2 py-0.5 rounded-full font-mono">
                     {response.execution_time_ms} ms
@@ -160,26 +168,52 @@ export const AIAssistant: React.FC = () => {
                 {response.answer}
               </div>
 
-              {/* RAG Agent Pipeline Breakdown */}
-              <div className="pt-2">
-                <span className="text-[10px] font-bold text-[#9CA3AF] uppercase tracking-wider block mb-2">
-                  ⚙️ Multi-Agent Execution Pipeline:
+              {/* Confidence + retrieval stats */}
+              <div className="flex flex-wrap gap-2 text-[10px]">
+                <span className="bg-[#EDE9FE] text-[#8B5CF6] font-bold px-2.5 py-1 rounded-full">
+                  Confidence: {Math.round(response.confidence * 100)}%
                 </span>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px]">
-                  <div className="bg-[#FAF6F0] p-2.5 rounded-2xl border border-[#FFDFE5]">
-                    <span className="font-bold text-[#8B5CF6] block">1. Retrieval Agent</span>
-                    <span className="text-[10px] text-[#9CA3AF]">{response.retrieval_agent}</span>
-                  </div>
-                  <div className="bg-[#FAF6F0] p-2.5 rounded-2xl border border-[#FFDFE5]">
-                    <span className="font-bold text-[#10B981] block">2. Evaluator Agent</span>
-                    <span className="text-[10px] text-[#9CA3AF]">{response.evaluator_agent}</span>
-                  </div>
-                  <div className="bg-[#FAF6F0] p-2.5 rounded-2xl border border-[#FFDFE5]">
-                    <span className="font-bold text-[#FF8DA1] block">3. Query Agent</span>
-                    <span className="text-[10px] text-[#9CA3AF]">{response.query_agent}</span>
+                <span className="bg-[#FFDFE5] text-[#FF8DA1] font-bold px-2.5 py-1 rounded-full">
+                  {response.retrieval_count} memories retrieved
+                </span>
+                <span className="bg-[#FAF6F0] text-[#9CA3AF] px-2.5 py-1 rounded-full font-mono">
+                  Provider: {response.provider}
+                </span>
+              </div>
+
+              {/* Cited Sources */}
+              {response.sources.length > 0 && (
+                <div className="pt-2">
+                  <span className="text-[10px] font-bold text-[#9CA3AF] uppercase tracking-wider block mb-2">
+                    🔗 Cited Sources ({response.sources.length}):
+                  </span>
+                  <div className="space-y-2 max-h-[260px] overflow-y-auto pr-1">
+                    {response.sources.map((s) => (
+                      <div key={s.id} className="bg-[#FAF6F0] p-3 rounded-2xl border border-[#FFDFE5]/60 text-xs">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-[#FFDFE5] text-[#FF8DA1]">
+                            {s.action || 'MEMORY'}
+                          </span>
+                          <span className="text-[9px] font-bold text-[#10B981]">
+                            Score: {Math.round(s.score * 100)}%
+                          </span>
+                        </div>
+                        <p className="text-[#4A3E3D] font-medium leading-tight">{s.content}</p>
+                        <span className="text-[9px] text-[#9CA3AF] block mt-1 font-mono">
+                          {s.id}
+                          {s.created_at ? ` · ${new Date(s.created_at).toLocaleString()}` : ''}
+                        </span>
+                      </div>
+                    ))}
                   </div>
                 </div>
-              </div>
+              )}
+            </div>
+          )}
+
+          {error && !loading && (
+            <div className="bg-[#FEF2F2] border border-[#FECACA] text-[#B91C1C] text-xs p-4 rounded-2xl">
+              {error}
             </div>
           )}
 
@@ -211,17 +245,17 @@ export const AIAssistant: React.FC = () => {
                   <div key={m.id} className="bg-[#FAF6F0] p-3 rounded-2xl border border-[#FFDFE5]/60 text-xs">
                     <div className="flex items-center justify-between mb-1">
                       <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-[#FFDFE5] text-[#FF8DA1]">
-                        {m.action_type}
+                        {m.action || 'MEMORY'}
                       </span>
-                      {m.relevance_score && (
-                        <span className="text-[9px] font-bold text-[#10B981]">
-                          Score: {Math.round(m.relevance_score * 100)}%
+                      {m.task_id && (
+                        <span className="text-[9px] font-bold text-[#8B5CF6]">
+                          Task #{m.task_id}
                         </span>
                       )}
                     </div>
-                    <p className="text-[#4A3E3D] font-medium leading-tight">{m.memory_text}</p>
+                    <p className="text-[#4A3E3D] font-medium leading-tight">{m.content}</p>
                     <span className="text-[9px] text-[#9CA3AF] block mt-1">
-                      {new Date(m.timestamp).toLocaleString()}
+                      {new Date(m.created_at).toLocaleString()}
                     </span>
                   </div>
                 ))

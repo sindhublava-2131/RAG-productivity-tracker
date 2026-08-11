@@ -38,20 +38,50 @@ export interface AnalyticsData {
   completion_by_hour: Record<string, number>;
 }
 
-export interface MemoryItem {
+export interface MemorySource {
   id: string;
-  memory_text: string;
-  action_type: string;
-  timestamp: string;
-  relevance_score?: number;
+  task_id: number | null;
+  content: string;
+  action: string | null;
+  created_at: string | null;
+  score: number;
 }
 
 export interface RAGResponse {
   answer: string;
-  retrieved_memories: MemoryItem[];
-  evaluator_score: number;
-  retrieval_agent: string;
-  evaluator_agent: string;
-  query_agent: string;
+  sources: MemorySource[];
+  confidence: number;
+  grounded: boolean;
+  retrieval_count: number;
+  provider: string;
+  model: string;
   execution_time_ms: number;
+}
+
+export interface MemoryRecord {
+  id: string;
+  user_id: number;
+  task_id: number | null;
+  action: string | null;
+  content: string;
+  created_at: string;
+  source_type: string | null;
+  source_id: string | null;
+  embedding_model: string | null;
+  schema_version: number;
+  task_title: string | null;
+  priority: string | null;
+  status: string | null;
+  due_date: string | null;
+  completed_at: string | null;
+  estimated_minutes: number | null;
+  actual_minutes: number | null;
+}
+
+export interface MemoryListResponse {
+  items: MemoryRecord[];
+  total: number;
+  limit: number;
+  offset: number;
+  has_more: boolean;
 }
