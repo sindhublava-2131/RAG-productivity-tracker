@@ -6,6 +6,7 @@ import pytest
 
 import auth
 from core.config import Settings
+from core.rate_limit import is_allowed, reset_limits
 from services.rag.context import SourceBlock
 from services.rag.grounding import GroundingValidator
 from services.rag.vector_store import VectorRecord
@@ -95,3 +96,70 @@ def test_secrets_not_logged(caplog):
     sec = s.resolved_jwt_secret()
     assert secret_key not in caplog.text
     assert sec == secret_key
+
+
+def test_logout_revokes_token(client, auth_headers, user_token):
+    # Before logout, the token is valid.
+    res = client.get("/api/auth/me", headers=auth_headers)
+    assert res.status_code == 200
+
+    # Logout revokes it server-side.
+    res = client.post("/api/auth/logout", headers=auth_headers)
+    assert res.status_code == 200
+
+    # The same token is now rejected.
+    res = client.get("/api/auth/me", headers=auth_headers)
+    assert res.status_code == 401
+    assert user_token is not None
+
+
+def test_change_password_flow(client, auth_headers, test_user):
+    # Wrong current password is rejected.
+    res = client.post(
+        "/api/auth/change-password",
+        json={"current_password": "wrongpass", "new_password": "newsecure123"},
+        headers=auth_headers,
+    )
+    assert res.status_code == 401
+
+    # Correct current password succeeds.
+    res = client.post(
+        "/api/auth/change-password",
+        json={"current_password": "securepassword123", "new_password": "newsecure123"},
+        headers=auth_headers,
+    )
+    assert res.status_code == 200
+
+    # Old password no longer works; new one does.
+    old_login = client.post(
+        "/api/auth/login",
+        json={"email": test_user.email, "password": "securepassword123"},
+    )
+    assert old_login.status_code == 401
+
+    new_login = client.post(
+        "/api/auth/login",
+        json={"email": test_user.email, "password": "newsecure123"},
+    )
+    assert new_login.status_code == 200
+
+
+def test_model_allowlist_rejects_unknown_models(client, auth_headers):
+    # Unknown model for a cloud provider is rejected before reaching the LLM.
+    res = client.post(
+        "/api/rag/query",
+        json={"question": "hello", "provider": "openai", "model_name": "gpt-9999"},
+        headers=auth_headers,
+    )
+    assert res.status_code == 400
+    assert "not allowed" in res.json()["detail"].lower()
+
+
+def test_rate_limiter_enforces_limit():
+    reset_limits()
+    bucket = "test-bucket:1.2.3.4"
+    assert is_allowed(bucket, limit=3, window_seconds=60) is True
+    assert is_allowed(bucket, limit=3, window_seconds=60) is True
+    assert is_allowed(bucket, limit=3, window_seconds=60) is True
+    assert is_allowed(bucket, limit=3, window_seconds=60) is False
+    reset_limits()
