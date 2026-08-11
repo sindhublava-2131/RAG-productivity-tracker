@@ -37,7 +37,9 @@ def _run_migrations(fail_fast: bool = False) -> None:
     creation so existing dev data is never lost.
     """
     try:
-        from alembic import command
+        # ruff 0.5.x and 0.16.x disagree on the ordering of these two local
+        # imports, so pin them in the 0.5.x (project-pinned) order with noqa.
+        from alembic import command  # noqa: I001
         from alembic.config import Config
 
         cfg = Config(str(BACKEND_DIR / "alembic.ini"))
