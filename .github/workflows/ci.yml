@@ -24,7 +24,11 @@ jobs:
       - name: Install backend dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r backend/requirements.txt pytest ruff mypy pytest-asyncio pytest-cov
+          # Install the project with its declared dev extras (pinned toolchain:
+          # ruff~=0.5.0, mypy~=1.10.0, pytest~=8.3, pytest-asyncio~=0.24, pytest-cov~=5).
+          # Do NOT install ruff/mypy/pytest unpinned -- latest versions add new
+          # rules that can fail the build (e.g. ruff 0.16 UP042/ASYNC109).
+          pip install -e "./backend[dev]"
 
       - name: Backend Lint (Ruff)
         run: |
